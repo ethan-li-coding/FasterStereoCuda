@@ -65,8 +65,7 @@ sint32 RemovePeaksChunks(float32* disp_map, sint32* segid, sint32 w, sint32 h, s
 							search = *(disp_map + searchidx);
 							if (search == INVALID_VALUE)
 								continue;
-							if (abs(search - base) <= 1.0)
-							{
+							if (abs(search - base) <= 1.0) {
 								seg.push_back(searchidx);
 								*(segid + searchidx) = segs;
 							}
@@ -126,7 +125,7 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 
 	if (print_log_)
 		printf("Cuda Stereo\n");
-	if (print_log_) printf("初始化CUDA...\n");
+	if (print_log_) printf("Initialize CUDA...\n");
 
 	cudaDeviceProp device_prop{};
 	sint32 num_dev = 0;
@@ -134,10 +133,10 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 		return false;
 	}
 	if (num_dev == 0) {
-		if (print_log_) printf("没有检测到支持CUDA的设备！");
+		if (print_log_) printf("No CUDA-enabled device detected！");
 		return false;
 	}
-	//选择最优显卡
+	//Select the best GPU
 	sint32 choose_id = 0;
 	if (num_dev == 1) {
 		choose_id = 0;
@@ -172,15 +171,14 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	disp_range_ = disp_range;
 	if (width_ == 0 || height_ == 0)
 	{
-		if (print_log_) printf("影像尺寸错误！");
+		if (print_log_) printf("Image size error！");
 		return false;
 	}
 
 	if (print_log_) printf("\nw = %d h = %d d = %d\n", width_, height_, disp_range_);
 
-	if (width_ == 0 || height_ == 0 || disp_range_ == 0)
-	{
-		if (print_log_) printf("参数错误！");
+	if (width_ == 0 || height_ == 0 || disp_range_ == 0) {
+		if (print_log_) printf("Parameters error！");
 		return false;
 	}
 
@@ -204,29 +202,29 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 
 	inidisp_tmp_ = new sint16[width_ * height_];
 
-	// 初始化代价计算器
+	// initialize Cost Computor
 	computor_ = new CostComputor;
 	if(!computor_->Initialize(width_, height_, min_disparity_, min_disparity_ + disp_range_, sgm_option.cs_type)) {
-		if (print_log_) printf("初始化代价计算器失败！");
+		if (print_log_) printf("Initialize Cost Computor failed!");
 		delete computor_; computor_ = nullptr;
 		return false;
 	}
-	// 初始化代价聚合器
+	// initialize Cost Aggregator
 	aggregator_ = new CostAggregator;
 	if(!aggregator_->Initialize(width_, height_, min_disparity_, min_disparity_ + disp_range_)) {
-		if (print_log_) printf("初始化代价聚合器失败！");
+		if (print_log_) printf("Initialize Cost Aggregator failed!");
 		delete aggregator_; aggregator_ = nullptr;
 		return false;
 	}
-	// 初始化视差图滤波器
+	// initialize Disparity Filter
 	filter_ = new DisparityFilter;
 	if(!filter_->Initialize(width_, height_)) {
-		if (print_log_) printf("初始化视差图滤波器失败！");
+		if (print_log_) printf("Initialize Disparity Filter failed!");
 		delete filter_; filter_ = nullptr;
 		return false;
 	}
 
-	//创建线程
+	// create threads for removing peaks
 	SYSTEM_INFO si;
 	GetSystemInfo(&si);
 	num_threads_ = si.dwNumberOfProcessors / 2;
@@ -246,11 +244,11 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 		_beginthread(RemovePeaksChunksThreads, 0, thead);
 	}
 
-	//创建异步并发流
+	// create concurrency streams
 	cu_streams_ = static_cast<cudaStream_t*>(new cudaStream_t[2]);
 	for (sint32 i = 0; i < 2; i++) {
 		if (!CudaSafeCall(cudaStreamCreate(&(static_cast<cudaStream_t*>(cu_streams_))[i]))) {
-			if (print_log_) printf("创建异步并发流失败！");
+			if (print_log_) printf("Create concurrency streams failed！");
 			return false;
 		}
 	}
@@ -364,7 +362,8 @@ bool StereoCudaImpl::ComputeCost(uint8* img_left, uint8* img_right, sint16* init
 		cudaMemcpy2DAsync(cu_inidisp_left_, idp_psize_, init_disp_left, width_ * sizeof(sint16), width_ * sizeof(sint16), height_, cudaMemcpyHostToDevice, stream0);
 		cudaStreamSynchronize(stream0);
 		if (sgm_option_.do_lr_check)
-		{//计算右影像的初始视差图
+		{
+			// compute initial disparity map of right view
 			cusgm_util::ComputeRightInitialValue(cu_inidisp_left_, cu_inidisp_right_, width_, height_, idp_psize_);
 			DisparityFilter::DilationCuda(cu_inidisp_tmp_, cu_inidisp_right_, 5, width_, height_, idp_psize_);
 			cudaMemcpy2DAsync(cu_inidisp_right_, idp_psize_, cu_inidisp_tmp_, idp_psize_, idp_psize_, height_, cudaMemcpyDeviceToDevice, stream1);
@@ -380,7 +379,7 @@ bool StereoCudaImpl::ComputeCost(uint8* img_left, uint8* img_right, sint16* init
 		return false;
 	}
 
-	// 代价聚合设置参数
+	// Set data for cost computor
 	computor_->SetData(cu_img_left_, cu_img_right_, im_psize_);
 
 	// census transform for left view
@@ -496,23 +495,23 @@ bool StereoCudaImpl::Match(uint8* img_left, uint8* img_right, float32* disp_left
 	float64 time = 0.0;
 	if (print_log_) printf("Timing:\n");
 
-	// 代价计算
+	// compute cost
 	if (!ComputeCost(img_left, img_right, init_disp_left)) {
 		return false;
 	}
 
-	// 代价聚合
+	// cost aggregate
 	if (!CostAggregate(init_disp_left, ste_roi_left, ste_roi_right)) {
 		return false;
 	}
 	dp_psize_ = aggregator_->get_disp_psize();
 
-	// 滤波
+	// filter
 	Filter();
 
 	auto start = steady_clock::now();
 
-	//结果传回主机端
+	// output disparities to host
 	cudaError_t status = cudaMemcpy2D(disp_left, width_ * sizeof(float32), aggregator_->get_disp_ptr(), dp_psize_, width_ * sizeof(float32), height_, cudaMemcpyDeviceToHost);
 	if (disp_right) {
 		cudaMemcpy2D(disp_right, width_ * sizeof(float32), aggregator_->get_disp_r_ptr(), dp_psize_, width_ * sizeof(float32), height_, cudaMemcpyDeviceToHost);
@@ -523,7 +522,7 @@ bool StereoCudaImpl::Match(uint8* img_left, uint8* img_right, float32* disp_left
 	if (print_log_) printf("** D2H:					%.2lf ms\n", time);
 	start = steady_clock::now();
 
-	// 剔除小连通区
+	// remove peaks
 	RemovePeaksChunks(ste_roi_left, disp_left);
 
 	return true;
@@ -545,7 +544,7 @@ bool StereoCudaImpl::Match2(uint8* img_left, uint8* img_right, float32* depth_le
 
 	start = steady_clock::now();
 
-	//计算深度
+	// compute depth
 	if (sgm_option_.do_remove_peaks)
 		cudaMemcpy2D(aggregator_->get_disp_ptr(), dp_psize_, disp_ptr_, width_ * sizeof(float32), width_ * sizeof(float32), height_, cudaMemcpyHostToDevice);
 	cusgm_util::ComputeDepthCuda(aggregator_->get_disp_ptr(), dp_psize_, width_, height_, cu_depth_left_, cam_param_);
@@ -556,7 +555,7 @@ bool StereoCudaImpl::Match2(uint8* img_left, uint8* img_right, float32* depth_le
 
 	start = steady_clock::now();
 
-	//结果传回主机端
+	// output depth to host
 	cudaMemcpy2D(depth_left, width_ * sizeof(float32), cu_depth_left_, dp_psize_, width_ * sizeof(float32), height_, cudaMemcpyDeviceToHost);
 
 	end = steady_clock::now();
@@ -568,48 +567,45 @@ bool StereoCudaImpl::Match2(uint8* img_left, uint8* img_right, float32* depth_le
 
 void StereoCudaImpl::GetRoiFromDispMap(float32* disp_ptr, sint32 width, sint32 height, StereoROI_T& ste_roi)
 {
-	if (!disp_ptr)
+	if (!disp_ptr) {
 		return;
+	}
 	sint32 size = width * height;
-	float32* pDisp0 = disp_ptr;
+	float32* disp = disp_ptr;
 	sint32 n = 0;
-	for (n = 0; n < size; n++)
-		if (*(pDisp0++) != INVALID_VALUE)
+	for (n = 0; n < size; n++) {
+		if (*(disp++) != INVALID_VALUE) {
 			break;
+		}
+	}
 	ste_roi.y = n / width;
-	pDisp0 = disp_ptr + size - 1;
+	disp = disp_ptr + size - 1;
 	sint32 size0 = ste_roi.y * width;
 	for (n = size - 1; n > size0; n--)
-		if (*(pDisp0--) != INVALID_VALUE)
+		if (*(disp--) != INVALID_VALUE)
 			break;
 	ste_roi.h = n / width - ste_roi.y + 1;
 
-	bool bSearchEnd = false;
-	for (sint32 j = 0; j < width; j++)
-	{
-		for (sint32 i = 0; i < height; i++)
-		{
-			if (disp_ptr[i * width + j] != INVALID_VALUE)
-			{
+	bool search_done = false;
+	for (sint32 j = 0; j < width; j++) {
+		for (sint32 i = 0; i < height; i++) {
+			if (disp_ptr[i * width + j] != INVALID_VALUE) {
 				ste_roi.x = j;
-				bSearchEnd = true;
+				search_done = true;
 				break;
 			}
 		}
-		if (bSearchEnd) break;
+		if (search_done) break;
 	}
-	bSearchEnd = false;
-	for (sint32 j = width - 1; j > ste_roi.x; j--)
-	{
-		for (sint32 i = 0; i < height; i++)
-		{
-			if (disp_ptr[i * width + j] != INVALID_VALUE)
-			{
+	search_done = false;
+	for (sint32 j = width - 1; j > ste_roi.x; j--) {
+		for (sint32 i = 0; i < height; i++) {
+			if (disp_ptr[i * width + j] != INVALID_VALUE) {
 				ste_roi.w = j - ste_roi.x + 1;
-				bSearchEnd = true;
+				search_done = true;
 				break;
 			}
 		}
-		if (bSearchEnd) break;
+		if (search_done) break;
 	}
 }

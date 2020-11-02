@@ -15,6 +15,7 @@
 #include "Timer.h"
 #include "types.h"
 #include "trial_check.h"
+#include <algorithm>
 
 #define USING_PAGE_LOCKED_MEMORY
 
@@ -113,7 +114,7 @@ HierSgmCudaImpl::~HierSgmCudaImpl()
 	Release();
 }
 
-void _Zoom(const unsigned char* src,unsigned char* dst,int w_src,int h_src,int scale_x, int scale_y)
+void Zoom(const unsigned char* src,unsigned char* dst,int w_src,int h_src,int scale_x, int scale_y)
 {
 	if (scale_x == 1 && scale_y == 1) {
 		memcpy(dst, src, w_src * h_src * sizeof(unsigned char));
@@ -213,7 +214,7 @@ bool HierSgmCudaImpl::Init(const ste_opt1_t& option)
 	height_ = height;
 
 	//每一层的数据分配、参数计算、匹配类初始化
-	num_layers_ = max(1, num_layers);
+	num_layers_ = std::max(1, num_layers);
 	vision_stereo_ = new StereoCuda * [num_layers_]();
 	layer_bytes_left_ = new unsigned char* [num_layers_]();
 	layer_bytes_right_ = new unsigned char* [num_layers_]();
@@ -296,7 +297,7 @@ bool HierSgmCudaImpl::Init2(const ste_opt2_t& option)
 
 	width_ = width;
 	height_ = height;
-	num_layers_ = max(1, num_layers);
+	num_layers_ = std::max(1, num_layers);
 	
 	//标定参数
 	CamParam_T cam_scale;
@@ -410,26 +411,26 @@ bool HierSgmCudaImpl::Match(const unsigned char * bytes_left, const unsigned cha
 	timer.Start();
 	for (int i = 0; i < num_layers_; i++){
 		if (i == 0){
-			_Zoom(bytes_left_, layer_bytes_left_[i], width_, height_, 1, 1);
-			_Zoom(bytes_right_, layer_bytes_right_[i], width_, height_, 1, 1);
+			Zoom(bytes_left_, layer_bytes_left_[i], width_, height_, 1, 1);
+			Zoom(bytes_right_, layer_bytes_right_[i], width_, height_, 1, 1);
 		}
 		else{
 			const int scale = static_cast<int>(pow(2.0, static_cast<double>(i - 1)));
 			const int layer_width = width_ / scale;
 			const int layer_height = height_ / scale;
-			_Zoom(layer_bytes_left_[i - 1], layer_bytes_left_[i], layer_width, layer_height, 2, 2);
-			_Zoom(layer_bytes_right_[i - 1], layer_bytes_right_[i], layer_width, layer_height, 2, 2);
+			Zoom(layer_bytes_left_[i - 1], layer_bytes_left_[i], layer_width, layer_height, 2, 2);
+			Zoom(layer_bytes_right_[i - 1], layer_bytes_right_[i], layer_width, layer_height, 2, 2);
 		}
 	}
 	timer.End();
 
 	if (is_print_timing_) {
-		printf("Zoom: %.1lf ms\n", timer.GetDurationMs());
+		printf("Zoom: %.1lf ms\n", timer.GetDurationMS());
 	}
 
 	bool result = false;
 
-	//分层匹配，每一层的视差结果估计出下一层的像素初始视差，传入下一层
+	//分层匹配
 	double match_time = 0.0;
 	for (int i = num_layers_ - 1; i >= 0; i--){
 		timer.Start();
@@ -439,16 +440,15 @@ bool HierSgmCudaImpl::Match(const unsigned char * bytes_left, const unsigned cha
 			result = vision_stereo_[i]->Match(layer_bytes_left_[i], layer_bytes_right_[i], disparity_data, nullptr, layer_initial_disps_[i]);
 		}
 		timer.End();
-		const double time_level = timer.GetDurationMs();
+		const double time_level = timer.GetDurationMS();
 		if (is_print_timing_) {
 			printf("	Level %d: %.1lf ms\n", i, time_level); match_time += time_level;
 		}
-		//计算下一层像素的初始视差值
 		if (i > 0){
 			timer.Start();
 			int count = ComputeInitDispInNextLevel(layer_disps_left_[i], layer_initial_disps_[i - 1], layer_width_[i - 1], layer_height_[i - 1]);
 			timer.End();
-			double time_level = timer.GetDurationMs();
+			double time_level = timer.GetDurationMS();
 			if (is_print_timing_) {
 				printf("	EstInit %d: %.1lf ms\n", i, time_level);
 			}
@@ -492,21 +492,21 @@ bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned cha
 
 	for (int i = 0; i < num_layers_; i++) {
 		if (i == 0) {
-			_Zoom(bytes_left_, layer_bytes_left_[i], width_, height_, 1, 1);
-			_Zoom(bytes_right_, layer_bytes_right_[i], width_, height_, 1, 1);
+			Zoom(bytes_left_, layer_bytes_left_[i], width_, height_, 1, 1);
+			Zoom(bytes_right_, layer_bytes_right_[i], width_, height_, 1, 1);
 		}
 		else {
 			const int scale = static_cast<int>(pow(2.0, static_cast<double>(i - 1)));
 			const int layer_width = width_ / scale;
 			const int layer_height = height_ / scale;
-			_Zoom(layer_bytes_left_[i - 1], layer_bytes_left_[i], layer_width, layer_height, 2, 2);
-			_Zoom(layer_bytes_right_[i - 1], layer_bytes_right_[i], layer_width, layer_height, 2, 2);
+			Zoom(layer_bytes_left_[i - 1], layer_bytes_left_[i], layer_width, layer_height, 2, 2);
+			Zoom(layer_bytes_right_[i - 1], layer_bytes_right_[i], layer_width, layer_height, 2, 2);
 		}
 	}
 
 	timer.End();
 	if (is_print_timing_)
-		printf("Zoom: %.1lf ms\n", timer.GetDurationMs());
+		printf("Zoom: %.1lf ms\n", timer.GetDurationMS());
 
 	bool result = false;
 	double match_time = 0.0;
@@ -528,7 +528,7 @@ bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned cha
 		}
 
 		timer.End();
-		double time_level = timer.GetDurationMs();
+		double time_level = timer.GetDurationMS();
 		if (is_print_timing_)
 			printf("	Level %d: %.1lf ms\n", i, time_level);
 
@@ -542,7 +542,7 @@ bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned cha
 			timer.Start();
 			int count = ComputeInitDispInNextLevel(layer_disps_left_[i], layer_initial_disps_[i - 1], layer_width_[i - 1], layer_height_[i - 1]);
 			timer.End();
-			time_level = timer.GetDurationMs();
+			time_level = timer.GetDurationMS();
 			if (is_print_timing_)
 				printf("	EstInit %d: %.1lf ms\n", i, time_level);
 
@@ -553,7 +553,7 @@ bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned cha
 				StereoCuda::GetRoiFromDispMap(layer_disps_right_[i], layer_width_[i], layer_height_[i], *stereo_roi_right);
 				stereo_roi_right->x *= 2; stereo_roi_right->y *= 2; stereo_roi_right->w *= 2; stereo_roi_right->h *= 2;
 				timer.End();
-				time_level = timer.GetDurationMs();
+				time_level = timer.GetDurationMS();
 				if (is_print_timing_)
 					printf("	GetROI %d: %.1lf ms\n", i, time_level);
 			}
@@ -566,7 +566,7 @@ bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned cha
 	}
 
 	timer_match.End();
-	match_time = timer_match.GetDurationMs();
+	match_time = timer_match.GetDurationMS();
 	if (is_print_timing_)
 		printf("Match: %.1lf ms\n", match_time);
 
