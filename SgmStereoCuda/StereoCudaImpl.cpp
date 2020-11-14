@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include "cusgm_util.cuh"
+#include <thread>
 using namespace std::chrono;
 
 StereoCudaImpl::StereoCudaImpl() :	cu_img_left_(nullptr), cu_img_right_(nullptr), cu_disp_out_(nullptr), cu_depth_left_(nullptr),
@@ -241,14 +242,15 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 		thead->h = end - start;
 		thead->segid_ptr = new sint32[thead->w * thead->h];
 		thead->threshold = thead->w * thead->h * sgm_option_.peaks_ratio_threshold;
-		_beginthread(RemovePeaksChunksThreads, 0, thead);
+		std::thread t(RemovePeaksChunksThreads, thead);
+		t.detach();
 	}
 
 	// create concurrency streams
 	cu_streams_ = static_cast<cudaStream_t*>(new cudaStream_t[2]);
 	for (sint32 i = 0; i < 2; i++) {
 		if (!CudaSafeCall(cudaStreamCreate(&(static_cast<cudaStream_t*>(cu_streams_))[i]))) {
-			if (print_log_) printf("Create concurrency streams failed£¡");
+			if (print_log_) printf("Create concurrency streams failed!");
 			return false;
 		}
 	}

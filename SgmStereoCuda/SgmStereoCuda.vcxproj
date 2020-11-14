@@ -197,6 +197,8 @@ copy $(OutDir)$(TargetName).dll $(SolutionDir)library\StereoCuda\dll\</Command>
     <CudaCompile Include="cusgm_util.cu" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\semaphore.h" />
+    <ClInclude Include="..\common\thread.h" />
     <ClInclude Include="cusgm_ca.cuh" />
     <ClInclude Include="cusgm_cc.cuh" />
     <ClInclude Include="cusgm_df.h" />
