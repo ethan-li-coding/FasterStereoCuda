@@ -1,7 +1,5 @@
 #include "StereoCudaImpl.h"
 #include <cstdio>
-#include "windows.h"
-#include "process.h"
 #include <unordered_map>
 
 #include "cusgm_types.h"
@@ -9,11 +7,11 @@
 #include "cusgm_ca.cuh"
 #include "cusgm_df.h"
 
-#include <chrono>
 #include "cusgm_util.cuh"
-#include <thread>
 #include "thread.h"
-
+#include <thread>
+#include <algorithm>
+#include <chrono>
 using namespace std::chrono;
 
 StereoCudaImpl::StereoCudaImpl() :	cu_img_left_(nullptr), cu_img_right_(nullptr), cu_disp_out_(nullptr), cu_depth_left_(nullptr),
@@ -226,9 +224,7 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	}
 
 	// create threads for removing peaks
-	SYSTEM_INFO si;
-	GetSystemInfo(&si);
-	num_threads_ = si.dwNumberOfProcessors / 2;
+	num_threads_ = std::thread::hardware_concurrency() / 2;
 	remove_peaks_ = new void* [num_threads_];
 	for (sint32 i = 0; i < num_threads_; i++) {
 		remove_peaks_[i] = static_cast<thread_remove_peaks*>(new thread_remove_peaks);
@@ -236,8 +232,8 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	sint32 rm_tiles = height_ / num_threads_;
 	for (sint32 i = 0; i < num_threads_; i++) {
 		auto thead = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
-		sint32 start = max(0, i * rm_tiles);
-		sint32 end = min(height_, (i + 1) * rm_tiles);
+		sint32 start = std::max(0, i * rm_tiles);
+		sint32 end = std::min(height_, (i + 1) * rm_tiles);
 		thead->w = width_;
 		thead->h = end - start;
 		thead->segid_ptr = new sint32[thead->w * thead->h];
@@ -452,8 +448,8 @@ void StereoCudaImpl::RemovePeaks(StereoROI_T* ste_roi_left, float32* disp_left)
 		const sint32 yoffset = (ste_roi_left == nullptr) ? 0 : ste_roi_left->y;
 		const sint32 rm_tiles = roi_h / num_threads_;
 		for (sint32 i = 0; i < num_threads_; i++) {
-			sint32 start = max(0, yoffset + i * rm_tiles);
-			sint32 end = min(height_, yoffset + (i + 1) * rm_tiles);
+			sint32 start = std::max(0, yoffset + i * rm_tiles);
+			sint32 end = std::min(height_, yoffset + (i + 1) * rm_tiles);
 			auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
 			rp->disp_ptr = disp_left + start * width_;
 			rp->h = end - start;
