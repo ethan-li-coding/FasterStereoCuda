@@ -2,8 +2,9 @@
 #define _THREAD_BASE_H_
 #include "semaphore.h"
 
-// thread struct 
-typedef struct ThreadBase {
+// thread 
+typedef class ThreadBase {
+public:
 	int thread_id;			// thread id
 	Semaphore* sem_start{};
 	Semaphore* sem_end{};
@@ -13,13 +14,9 @@ typedef struct ThreadBase {
 		thread_id = 0;
 		sem_start = new Semaphore;
 		sem_end = new Semaphore;
-		running = false;
+		running = true;
 		waiting = false;
 	}
-
-	virtual ~ThreadBase() = default;
-	// Run
-	virtual void Run() = 0;
 	// Wait to start
 	void WaitToStart() {
 		waiting = true;
@@ -40,6 +37,6 @@ typedef struct ThreadBase {
 		if(sem_start){ delete sem_start; sem_start = nullptr; }
 		if(sem_end){ delete sem_end; sem_end = nullptr; }
 	}
-}thread_base_t;
+}thread_base;
 
 #endif // _THREAD_BASE_H_

@@ -12,6 +12,8 @@
 #include <chrono>
 #include "cusgm_util.cuh"
 #include <thread>
+#include "thread.h"
+
 using namespace std::chrono;
 
 StereoCudaImpl::StereoCudaImpl() :	cu_img_left_(nullptr), cu_img_right_(nullptr), cu_disp_out_(nullptr), cu_depth_left_(nullptr),
@@ -27,48 +29,46 @@ StereoCudaImpl::~StereoCudaImpl()
 	Release();
 }
 
-sint32 RemovePeaksChunks(float32* disp_map, sint32* segid, sint32 w, sint32 h, sint32 threshold)
+sint32 RemovePeaks(float32* disp_map, sint32* segid, sint32 w, sint32 h, sint32 threshold)
 {
-	sint32 segs = 0, segs2 = 0;
 	std::vector<std::vector<sint32>> segment;
 	int in[4] = { -1,0,0,1 };
 	int jn[4] = { 0,1,-1,0 };
 	std::vector<sint32> seg;
 	seg.reserve(w * h);
+	sint32 segs = 0;
 	for (sint32 i = 0, xy = 0; i < h; i++) {
 		for (sint32 j = 0; j < w; j++, xy++) {
-			if (*(disp_map + xy) == INVALID_VALUE)
-				continue;
-			sint32 id = *(segid + xy);
+			if (*(disp_map + xy) == INVALID_VALUE) continue;
+			const sint32 id = *(segid + xy);
 			if (id == 0) {
 				segs++;
 				*(segid + xy) = segs;
 				seg.clear();
 				seg.push_back(xy);
-				sint32 count1 = 0, count2 = 0;
-				sint32 baseidx, searchidx, ii, jj;
-				float32 base, search;
+				auto count1 = 0, count2 = 0;
+				auto search_idx(0), ii(0), jj(0);
 				do {
 					count2 = seg.size();
 					for (sint32 k = count1; k < count2; k++) {
-						baseidx = seg[k];
-						ii = baseidx / w;
-						jj = baseidx - ii * w;
-						base = *(disp_map + baseidx);
+						const sint32 base_idx = seg[k];
+						ii = base_idx / w;
+						jj = base_idx - ii * w;
+						const float32 base = *(disp_map + base_idx);
 						for (int n = 0; n < 4; n++) {
-							int ix = ii + in[n];
-							int jx = jj + jn[n];
+							const int ix = ii + in[n];
+							const int jx = jj + jn[n];
 							if (ix < 0 || ix >= h || jx < 0 || jx >= w)
 								continue;
-							searchidx = ix * w + jx;
-							if (*(segid + searchidx) != 0)
+							search_idx = ix * w + jx;
+							if (*(segid + search_idx) != 0)
 								continue;
-							search = *(disp_map + searchidx);
+							const float32 search = *(disp_map + search_idx);
 							if (search == INVALID_VALUE)
 								continue;
 							if (abs(search - base) <= 1.0) {
-								seg.push_back(searchidx);
-								*(segid + searchidx) = segs;
+								seg.push_back(search_idx);
+								*(segid + search_idx) = segs;
 							}
 						}
 					}
@@ -78,10 +78,10 @@ sint32 RemovePeaksChunks(float32* disp_map, sint32* segid, sint32 w, sint32 h, s
 			}
 		}
 	}
-	segs = segment.size();
+	const sint32 num_seg = segment.size();
 	sint32 peaks = 0;
-	for (sint32 k = 0; k < segs; k++) {
-		sint32 size = segment[k].size();
+	for (sint32 k = 0; k < num_seg; k++) {
+		const sint32 size = segment[k].size();
 		if (size < threshold) {
 			for (sint32 n = 0; n < size; n++) {
 				*(disp_map + segment[k][n]) = INVALID_VALUE;
@@ -92,33 +92,33 @@ sint32 RemovePeaksChunks(float32* disp_map, sint32* segid, sint32 w, sint32 h, s
 	return peaks;
 }
 
-typedef struct RemovePeaksThreadOption
-{
+typedef class ThreadRemovePeaks: public ThreadBase {
+public:
 	float32* disp_ptr;
 	sint32* segid_ptr;
 	sint32 w, h;
 	sint32 threshold;
-	HANDLE evt;
-	bool running;
-	RemovePeaksThreadOption() : disp_ptr(nullptr), segid_ptr(nullptr), w(0), h(0), threshold(0), running(true) {
-		evt = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		running = true;
+	ThreadRemovePeaks(): ThreadBase(), disp_ptr(nullptr), segid_ptr(nullptr), w(0), h(0), threshold(0) {
+		std::thread t(Run, this);
+		t.detach();
 	}
-	~RemovePeaksThreadOption() {
-		if (segid_ptr != nullptr) { delete[] segid_ptr; segid_ptr = nullptr; }
-	}
-}rm_peaks_topt;
 
-void RemovePeaksChunksThreads(void* rm_opt)
-{
-	auto* rmp = static_cast<rm_peaks_topt*>(rm_opt);
-	while (rmp->running) {
-		WaitForSingleObject(rmp->evt, INFINITE);
-		if (!rmp->running) break;
-		RemovePeaksChunks(rmp->disp_ptr, rmp->segid_ptr, rmp->w, rmp->h, rmp->threshold);
-		SetEvent(rmp->evt);
+	~ThreadRemovePeaks() {
+		WaitForTerminate();
+		if (segid_ptr) { delete[] segid_ptr; segid_ptr = nullptr; }
+		disp_ptr = nullptr;
 	}
-}
+
+	static void Run(void* p) {
+		auto* rmp = static_cast<ThreadRemovePeaks*>(p);
+		while(rmp->running) {
+			rmp->WaitToStart();
+			RemovePeaks(rmp->disp_ptr, rmp->segid_ptr, rmp->w, rmp->h, rmp->threshold);
+			rmp->End();
+		}
+	}
+}thread_remove_peaks;
+
 
 bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sint32 disp_range, CuSGMOption sgm_option, bool print_log)
 {
@@ -134,7 +134,7 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 		return false;
 	}
 	if (num_dev == 0) {
-		if (print_log_) printf("No CUDA-enabled device detected£¡");
+		if (print_log_) printf("No CUDA-enabled device detected!\n");
 		return false;
 	}
 	//Select the best GPU
@@ -172,14 +172,14 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	disp_range_ = disp_range;
 	if (width_ == 0 || height_ == 0)
 	{
-		if (print_log_) printf("Image size error£¡");
+		if (print_log_) printf("Image size error!\n");
 		return false;
 	}
 
 	if (print_log_) printf("\nw = %d h = %d d = %d\n", width_, height_, disp_range_);
 
 	if (width_ == 0 || height_ == 0 || disp_range_ == 0) {
-		if (print_log_) printf("Parameters error£¡");
+		if (print_log_) printf("Parameters error!\n");
 		return false;
 	}
 
@@ -206,21 +206,21 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	// initialize Cost Computor
 	computor_ = new CostComputor;
 	if(!computor_->Initialize(width_, height_, min_disparity_, min_disparity_ + disp_range_, sgm_option.cs_type)) {
-		if (print_log_) printf("Initialize Cost Computor failed!");
+		if (print_log_) printf("Initialize Cost Computor failed!\n");
 		delete computor_; computor_ = nullptr;
 		return false;
 	}
 	// initialize Cost Aggregator
 	aggregator_ = new CostAggregator;
 	if(!aggregator_->Initialize(width_, height_, min_disparity_, min_disparity_ + disp_range_)) {
-		if (print_log_) printf("Initialize Cost Aggregator failed!");
+		if (print_log_) printf("Initialize Cost Aggregator failed!\n");
 		delete aggregator_; aggregator_ = nullptr;
 		return false;
 	}
 	// initialize Disparity Filter
 	filter_ = new DisparityFilter;
 	if(!filter_->Initialize(width_, height_)) {
-		if (print_log_) printf("Initialize Disparity Filter failed!");
+		if (print_log_) printf("Initialize Disparity Filter failed!\n");
 		delete filter_; filter_ = nullptr;
 		return false;
 	}
@@ -231,19 +231,17 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	num_threads_ = si.dwNumberOfProcessors / 2;
 	remove_peaks_ = new void* [num_threads_];
 	for (sint32 i = 0; i < num_threads_; i++) {
-		remove_peaks_[i] = static_cast<rm_peaks_topt*>(new rm_peaks_topt);
+		remove_peaks_[i] = static_cast<thread_remove_peaks*>(new thread_remove_peaks);
 	}
 	sint32 rm_tiles = height_ / num_threads_;
 	for (sint32 i = 0; i < num_threads_; i++) {
-		auto thead = static_cast<rm_peaks_topt*>(remove_peaks_[i]);
+		auto thead = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
 		sint32 start = max(0, i * rm_tiles);
 		sint32 end = min(height_, (i + 1) * rm_tiles);
 		thead->w = width_;
 		thead->h = end - start;
 		thead->segid_ptr = new sint32[thead->w * thead->h];
 		thead->threshold = thead->w * thead->h * sgm_option_.peaks_ratio_threshold;
-		std::thread t(RemovePeaksChunksThreads, thead);
-		t.detach();
 	}
 
 	// create concurrency streams
@@ -291,19 +289,13 @@ void StereoCudaImpl::Release()
 	cudaFree(cu_inidisp_left_);
 	cudaFree(cu_inidisp_right_);
 	cudaFree(cu_inidisp_tmp_);
-	for (sint32 i = 0; i < num_threads_; i++) {
-		if (remove_peaks_) {
-			auto* rp = static_cast<rm_peaks_topt*>(remove_peaks_[i]);
-			if (rp) {
-				rp->disp_ptr = nullptr;
-				rp->running = false;
-				SetEvent(rp->evt);
-				WaitForSingleObject(rp->evt, 10);
+	if (remove_peaks_) {
+		for (sint32 i = 0; i < num_threads_; i++) {
+			if (remove_peaks_[i]) {
+				auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
 				delete rp; rp = nullptr;
 			}
 		}
-	}
-	if (remove_peaks_) {
 		delete remove_peaks_;
 		remove_peaks_ = nullptr;
 	}
@@ -451,7 +443,7 @@ void StereoCudaImpl::Filter() const
 	if (print_log_) printf("** Filter:		%.2lf ms\n", time);
 }
 
-void StereoCudaImpl::RemovePeaksChunks(StereoROI_T* ste_roi_left, float32* disp_left)
+void StereoCudaImpl::RemovePeaks(StereoROI_T* ste_roi_left, float32* disp_left)
 {
 	auto start = steady_clock::now();
 
@@ -462,14 +454,20 @@ void StereoCudaImpl::RemovePeaksChunks(StereoROI_T* ste_roi_left, float32* disp_
 		for (sint32 i = 0; i < num_threads_; i++) {
 			sint32 start = max(0, yoffset + i * rm_tiles);
 			sint32 end = min(height_, yoffset + (i + 1) * rm_tiles);
-			auto* rp = static_cast<rm_peaks_topt*>(remove_peaks_[i]);
+			auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
 			rp->disp_ptr = disp_left + start * width_;
 			rp->h = end - start;
 			rp->threshold = rp->w * rp->h * sgm_option_.peaks_ratio_threshold;
 			memset(rp->segid_ptr, 0, rp->w * rp->h * sizeof(sint32));
 		}
-		for (sint32 i = 0; i < num_threads_; i++) SetEvent(static_cast<rm_peaks_topt*>(remove_peaks_[i])->evt);
-		for (sint32 i = 0; i < num_threads_; i++) WaitForSingleObject(static_cast<rm_peaks_topt*>(remove_peaks_[i])->evt, INFINITE);
+		for (sint32 i = 0; i < num_threads_; i++) {
+			auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
+			rp->Start();
+		}
+		for (sint32 i = 0; i < num_threads_; i++) {
+			auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
+			rp->WaitForEnd();
+		}
 	}
 
 	auto end = steady_clock::now();
@@ -525,7 +523,7 @@ bool StereoCudaImpl::Match(uint8* img_left, uint8* img_right, float32* disp_left
 	start = steady_clock::now();
 
 	// remove peaks
-	RemovePeaksChunks(ste_roi_left, disp_left);
+	RemovePeaks(ste_roi_left, disp_left);
 
 	return true;
 }

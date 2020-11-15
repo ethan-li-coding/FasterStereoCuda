@@ -102,7 +102,7 @@ private:
 	void Filter() const;
 
 	/**\brief 剔除小连通区 */
-	void RemovePeaksChunks(StereoROI_T* ste_roi_left, float32* disp_left);
+	void RemovePeaks(StereoROI_T* ste_roi_left, float32* disp_left);
 
 private:
 	/**\brief 设备端数据指针 */

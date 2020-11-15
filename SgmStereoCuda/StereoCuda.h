@@ -4,7 +4,7 @@
 #ifdef STEREO_CUDA_EXPORT
 #define STEREO_CUDA_DLL __declspec(dllexport)
 #else
-#define STEREO_CUDA_DLL /*__declspec(dllimport)*/
+#define STEREO_CUDA_DLL __declspec(dllimport)
 #endif
 
 class STEREO_CUDA_DLL StereoCuda

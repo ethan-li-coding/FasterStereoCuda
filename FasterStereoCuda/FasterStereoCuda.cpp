@@ -261,17 +261,17 @@ bool HierSgmCudaImpl::Init(const ste_opt1_t& option)
 		}
 
 		//估计视差范围
-		double disparity_min = min_disp / scale, disparity_max = max_disp / scale;
-		double disparity_range;
+		int disparity_min = min_disp / scale, disparity_max = max_disp / scale;
+		int disparity_range;
 		if (i == num_layers_ - 1) {
 			disparity_range = disparity_max - disparity_min;
-			disparity_range = (static_cast<int>(disparity_range) + 63) / 64 * 64;
+			disparity_range = (disparity_range + 63) / 64 * 64;
 		}
 		else {
 			disparity_min = 0.0; disparity_max = StereoCuda::get_level_range();
 			disparity_range = StereoCuda::get_level_range();
 		}
-		if (!vision_stereo_[i]->Init(layer_width_[i], layer_height_[i], static_cast<int>(disparity_min), static_cast<int>(disparity_range), sgm_param, is_print_timing_)) {
+		if (!vision_stereo_[i]->Init(layer_width_[i], layer_height_[i], disparity_min, disparity_range, sgm_param, is_print_timing_)) {
 			return false;
 		}
 	}
@@ -299,7 +299,7 @@ bool HierSgmCudaImpl::Init2(const ste_opt2_t& option)
 	height_ = height;
 	num_layers_ = std::max(1, num_layers);
 	
-	//标定参数
+	//相机参数
 	CamParam_T cam_scale;
 	cam_scale.x0_left = epi.x0_left;
 	cam_scale.y0_left = epi.y0_left;
