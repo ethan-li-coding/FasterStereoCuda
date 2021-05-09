@@ -31,13 +31,15 @@ sint32 RemovePeaks(float32* disp_map, sint32* segid, sint32 w, sint32 h, sint32 
 {
 	std::vector<std::vector<sint32>> segment;
 	int in[4] = { -1,0,0,1 };
-	int jn[4] = { 0,1,-1,0 };
+	int jn[4] = { 0,-1,1,0 };
 	std::vector<sint32> seg;
 	seg.reserve(w * h);
 	sint32 segs = 0;
+	sint32 s = 0;
 	for (sint32 i = 0, xy = 0; i < h; i++) {
 		for (sint32 j = 0; j < w; j++, xy++) {
 			if (*(disp_map + xy) == INVALID_VALUE) continue;
+			s++;
 			const sint32 id = *(segid + xy);
 			if (id == 0) {
 				segs++;
@@ -64,7 +66,7 @@ sint32 RemovePeaks(float32* disp_map, sint32* segid, sint32 w, sint32 h, sint32 
 							const float32 search = *(disp_map + search_idx);
 							if (search == INVALID_VALUE)
 								continue;
-							if (abs(search - base) <= 1.0) {
+							if (abs(search - base) <= 1.0f) {
 								seg.push_back(search_idx);
 								*(segid + search_idx) = segs;
 							}
@@ -78,6 +80,7 @@ sint32 RemovePeaks(float32* disp_map, sint32* segid, sint32 w, sint32 h, sint32 
 	}
 	const sint32 num_seg = segment.size();
 	sint32 peaks = 0;
+	sint32 sum = 0;
 	for (sint32 k = 0; k < num_seg; k++) {
 		const sint32 size = segment[k].size();
 		if (size < threshold) {
@@ -86,6 +89,7 @@ sint32 RemovePeaks(float32* disp_map, sint32* segid, sint32 w, sint32 h, sint32 
 				peaks++;
 			}
 		}
+		sum += size;
 	}
 	return peaks;
 }
@@ -224,7 +228,7 @@ bool StereoCudaImpl::Init(sint32 width, sint32 height, sint32 min_disparity, sin
 	}
 
 	// create threads for removing peaks
-	num_threads_ = std::thread::hardware_concurrency() / 2;
+	num_threads_ = std::thread::hardware_concurrency() * 3 / 4;
 	remove_peaks_ = new void* [num_threads_];
 	for (sint32 i = 0; i < num_threads_; i++) {
 		remove_peaks_[i] = static_cast<thread_remove_peaks*>(new thread_remove_peaks);
@@ -258,7 +262,7 @@ bool StereoCudaImpl::Init2(sint32 width, sint32 height, sint32 min_disparity, si
 	if (!Init(width, height, min_disparity, disp_range, sgm_option, print_log))
 		return false;
 
-	disp_ptr_ = new float32[width_ * height_];
+	MallocPageLockedPtr((void**)(&disp_ptr_), width * height * sizeof(float32));
 	cam_param_ = cam_param;
 	cudaMallocPitch((void**)&cu_depth_left_, &dp_psize_, size_t(width_) * sizeof(float32), size_t(height_));
 	return true;
@@ -299,10 +303,7 @@ void StereoCudaImpl::Release()
 		delete[] inidisp_tmp_;
 		inidisp_tmp_ = nullptr;
 	}
-	if (disp_ptr_) {
-		delete[] disp_ptr_;
-		disp_ptr_ = nullptr;
-	}
+	FreePageLockedPtr(disp_ptr_);
 
 	if (cu_streams_) {
 		for (sint32 i = 0; i < 2; i++) {
@@ -457,6 +458,7 @@ void StereoCudaImpl::RemovePeaks(StereoROI_T* ste_roi_left, float32* disp_left)
 			memset(rp->segid_ptr, 0, rp->w * rp->h * sizeof(sint32));
 		}
 		for (sint32 i = 0; i < num_threads_; i++) {
+			sint32 start = std::max(0, yoffset + i * rm_tiles);
 			auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
 			rp->Start();
 		}
@@ -508,7 +510,7 @@ bool StereoCudaImpl::Match(uint8* img_left, uint8* img_right, float32* disp_left
 	auto start = steady_clock::now();
 
 	// output disparities to host
-	cudaError_t status = cudaMemcpy2D(disp_left, width_ * sizeof(float32), aggregator_->get_disp_ptr(), dp_psize_, width_ * sizeof(float32), height_, cudaMemcpyDeviceToHost);
+	cudaError_t status = cudaMemcpy2D(disp_left, width_ * sizeof(float32), filter_->get_disp_map_out(), dp_psize_, width_ * sizeof(float32), height_, cudaMemcpyDeviceToHost);
 	if (disp_right) {
 		cudaMemcpy2D(disp_right, width_ * sizeof(float32), aggregator_->get_disp_r_ptr(), dp_psize_, width_ * sizeof(float32), height_, cudaMemcpyDeviceToHost);
 	}
@@ -516,8 +518,7 @@ bool StereoCudaImpl::Match(uint8* img_left, uint8* img_right, float32* disp_left
 	auto end = steady_clock::now();
 	time = (duration_cast<microseconds>(end - start)).count() / 1000.0;
 	if (print_log_) printf("** D2H:					%.2lf ms\n", time);
-	start = steady_clock::now();
-
+	
 	// remove peaks
 	RemovePeaks(ste_roi_left, disp_left);
 

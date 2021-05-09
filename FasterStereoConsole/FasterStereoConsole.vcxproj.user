@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>..\Data\building\left.bmp  ..\Data\building\right.bmp ..\Data\building\option.xml</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>D:\LY\Stereo\HierSgmCuda\FasterStereoCuda\Data\Building\left.bmp D:\LY\Stereo\HierSgmCuda\FasterStereoCuda\Data\Building\right.bmp D:\LY\Stereo\HierSgmCuda\FasterStereoCuda\Data\Building\option.xml</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
     <RemoteDebuggerCommandArguments>E:\ZG-Prog\GScan\Data\Ep-Data2</RemoteDebuggerCommandArguments>
     <RemoteDebuggerCommand>$(TargetPath)</RemoteDebuggerCommand>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LocalDebuggerCommandArguments>D:\LY\Stereo\HierSgmCuda\master\FasterStereoCuda\Data\KITTI\image_2 D:\LY\Stereo\HierSgmCuda\master\FasterStereoCuda\Data\KITTI\image_3 png D:\LY\Stereo\HierSgmCuda\master\FasterStereoCuda\Data\KITTI\option.xml</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>D:\LY\Stereo\HierSgmCuda\FasterStereoCuda\Data\Building\left.bmp D:\LY\Stereo\HierSgmCuda\FasterStereoCuda\Data\Building\right.bmp D:\LY\Stereo\HierSgmCuda\FasterStereoCuda\Data\Building\option.xml</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

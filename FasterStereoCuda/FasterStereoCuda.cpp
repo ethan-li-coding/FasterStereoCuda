@@ -19,6 +19,15 @@
 
 #define USING_PAGE_LOCKED_MEMORY
 
+#ifdef _DEBUG
+#define DEBUG_MODE
+#ifdef DEBUG_MODE
+#include <opencv.hpp>
+using namespace cv;
+#pragma comment(lib,"opencv_world310d.lib")
+#endif
+#endif
+
 class HierSgmCudaImpl
 {
 public:
@@ -101,11 +110,11 @@ HierSgmCudaImpl::HierSgmCudaImpl(): bytes_left_(nullptr), bytes_right_(nullptr),
 	int trial = TrialCheck::Check(30);
 	if(trial !=-1) {
 		in_trial = true;
-		printf("%d days remaining in the trial period!\n", trial);
+		printf("试用期还剩 %d 天!\n", trial);
 	}
 	else {
 		in_trial = false;
-		printf("Out of trial period!\n");
+		printf("超过试用期!\n");
 	}
 }
 
@@ -150,13 +159,18 @@ int ComputeInitDispInNextLevel(float* cur, short* next, int width, int height)
 		int ii2 = (i >> 1) * wid2;
 		short* nex = next + ii;
 		for (int j = 0; j < width; j++) {
-			const float disp = cur[ii2 + (j >> 1)];
-			if (disp != invad) {
-				nex[j] = static_cast<short>(2 * disp - level_range);
-				count++;
+			if (i % 2 == 1 || i == height - 1) {
+				nex[j] = next[(i - 1) * width + j];
 			}
 			else {
-				nex[j] = invad_short;
+				const float disp = cur[ii2 + (j >> 1)];
+				if (disp != invad) {
+					nex[j] = static_cast<short>(2 * disp - level_range);
+					count++;
+				}
+				else {
+					nex[j] = invad_short;
+				}
 			}
 		}
 	}
@@ -192,7 +206,7 @@ void SetSgmParameters(const bool& do_lr_check, const bool& do_rm_peaks, const bo
 		sgm_param.do_lr_check = (layer_id < num_layers - 1) ? false : do_lr_check;
 		sgm_param.do_remove_peaks = (layer_id < num_layers - 1) ? false : do_rm_peaks;
 		sgm_param.peaks_ratio_threshold = (layer_id < num_layers - 1) ? 0.0005f : 0.001f;
-		sgm_param.morphology_type = CuSGMOption::MP_NONE;
+		sgm_param.morphology_type = (layer_id < num_layers - 1) ? CuSGMOption::MP_NONE : CuSGMOption::MP_DILATION;
 	}
 }
 
@@ -409,17 +423,17 @@ bool HierSgmCudaImpl::Match(const unsigned char * bytes_left, const unsigned cha
 	//使区域无效
 	MyTimer timer;
 	timer.Start();
-	for (int i = 0; i < num_layers_; i++){
-		if (i == 0){
-			Zoom(bytes_left_, layer_bytes_left_[i], width_, height_, 1, 1);
-			Zoom(bytes_right_, layer_bytes_right_[i], width_, height_, 1, 1);
+	for (int n = 0; n < num_layers_; n++){
+		if (n == 0){
+			Zoom(bytes_left_, layer_bytes_left_[n], width_, height_, 1, 1);
+			Zoom(bytes_right_, layer_bytes_right_[n], width_, height_, 1, 1);
 		}
 		else{
-			const int scale = static_cast<int>(pow(2.0, static_cast<double>(i - 1)));
+			const int scale = static_cast<int>(pow(2.0, static_cast<double>(n - 1)));
 			const int layer_width = width_ / scale;
 			const int layer_height = height_ / scale;
-			Zoom(layer_bytes_left_[i - 1], layer_bytes_left_[i], layer_width, layer_height, 2, 2);
-			Zoom(layer_bytes_right_[i - 1], layer_bytes_right_[i], layer_width, layer_height, 2, 2);
+			Zoom(layer_bytes_left_[n - 1], layer_bytes_left_[n], layer_width, layer_height, 2, 2);
+			Zoom(layer_bytes_right_[n - 1], layer_bytes_right_[n], layer_width, layer_height, 2, 2);
 		}
 	}
 	timer.End();
@@ -430,29 +444,75 @@ bool HierSgmCudaImpl::Match(const unsigned char * bytes_left, const unsigned cha
 
 	bool result = false;
 
-	//分层匹配
+	//分层匹配，视差逐层传递
 	double match_time = 0.0;
-	for (int i = num_layers_ - 1; i >= 0; i--){
+	for (int n = num_layers_ - 1; n >= 0; n--){
 		timer.Start();
-		if (i > 0)
-			vision_stereo_[i]->Match(layer_bytes_left_[i], layer_bytes_right_[i], layer_disps_left_[i],nullptr, layer_initial_disps_[i]);
+		auto* stereo = vision_stereo_[n];
+		auto* bytes_l = layer_bytes_left_[n];
+		auto* bytes_r = layer_bytes_right_[n];
+		auto* disp_l = layer_disps_left_[n];
+		auto* initial_d = layer_initial_disps_[n];
+		if (n > 0) {
+			// 上层匹配，得到初始视差图
+			stereo->Match(bytes_l, bytes_r, disp_l, nullptr, initial_d);
+		}
 		else{
-			result = vision_stereo_[i]->Match(layer_bytes_left_[i], layer_bytes_right_[i], disparity_data, nullptr, layer_initial_disps_[i]);
+			// 底层匹配，得到最终视差图
+			result = stereo->Match(bytes_l, bytes_r, disparity_data, nullptr, initial_d);
 		}
 		timer.End();
 		const double time_level = timer.GetDurationMS();
 		if (is_print_timing_) {
-			printf("	Level %d: %.1lf ms\n", i, time_level); match_time += time_level;
+			printf("	Level %d: %.1lf ms\n", n, time_level); match_time += time_level;
 		}
-		if (i > 0){
+		if (n > 0){
 			timer.Start();
-			int count = ComputeInitDispInNextLevel(layer_disps_left_[i], layer_initial_disps_[i - 1], layer_width_[i - 1], layer_height_[i - 1]);
+			int count = ComputeInitDispInNextLevel(disp_l, layer_initial_disps_[n - 1], layer_width_[n - 1], layer_height_[n - 1]);
 			timer.End();
 			double time_level = timer.GetDurationMS();
 			if (is_print_timing_) {
-				printf("	EstInit %d: %.1lf ms\n", i, time_level);
+				printf("	ComputeInitDisp %d: %.1lf ms\n", n, time_level);
 			}
 		}
+
+#ifdef DEBUG_MODE
+		auto d_out = n > 0 ? disp_l : disparity_data;
+		const auto w = layer_width_[n];
+		const auto h = layer_height_[n];
+		Mat d_mat = Mat(h, w, CV_8UC1);
+		Mat l_mat = Mat(h, w, CV_8UC1);
+		Mat r_mat = Mat(h, w, CV_8UC1);
+		float min_d = 999999.0f, max_d = -999999.0f;
+		for (int i = 0; i < h; i++) {
+			for (int j = 0; j < w; j++) {
+				const float d = d_out[i * w + j];
+				if (d != -999999.0f) {
+					min_d = min(min_d, d);
+					max_d = max(max_d, d);
+				}
+			}
+		}
+		for (int i = 0; i < h; i++) {
+			for (int j = 0; j < w; j++) {
+				const float d = d_out[i * w + j];
+				if (d == -999999.0f) {
+					d_mat.data[i * w + j] = 0;
+				}
+				else {
+					d_mat.data[i * w + j] = static_cast<uchar>((d - min_d) / (max_d - min_d) * 255);
+				}
+				l_mat.data[i * w + j] = bytes_l[i * w + j];
+				r_mat.data[i * w + j] = bytes_r[i * w + j];
+			}
+		}
+		std::string d_name = "d_layer" + std::to_string(n) + ".bmp";
+		std::string l_name = "l_layer" + std::to_string(n) + ".bmp";
+		std::string r_name = "r_layer" + std::to_string(n) + ".bmp";
+		imwrite(d_name, d_mat);
+		imwrite(l_name, l_mat);
+		imwrite(r_name, r_mat);
+#endif
 	}
 	
 	if (is_print_timing_) {
@@ -577,46 +637,45 @@ bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned cha
 void HierSgmCudaImpl::Release()
 {	
 	if (num_layers_ > 0){
-		for (int i = 0; i < num_layers_; i++){
-			if (vision_stereo_){
-				if (vision_stereo_[i]){
-					vision_stereo_[i]->Release();
-					SafeDelete(vision_stereo_[i]);
-				}
-			}
+		for (int i = 0; i < num_layers_; i++){	
 #ifdef USING_PAGE_LOCKED_MEMORY
-			if (layer_bytes_left_[i]) {
+			if (layer_bytes_left_ && layer_bytes_left_[i]) {
 				StereoCuda::FreePageLockedPtr(layer_bytes_left_[i]);
 			}
-			if (layer_bytes_right_[i]) {
+			if (layer_bytes_right_ && layer_bytes_right_[i]) {
 				StereoCuda::FreePageLockedPtr(layer_bytes_right_[i]);
 			}
-			if (layer_initial_disps_[i]) {
+			if (layer_initial_disps_ && layer_initial_disps_[i]) {
 				StereoCuda::FreePageLockedPtr(layer_initial_disps_[i]);
 			}
-			if (layer_disps_left_[i]) {
+			if (layer_disps_left_ && layer_disps_left_[i]) {
 				StereoCuda::FreePageLockedPtr(layer_disps_left_[i]);
 			}
-			if (layer_disps_right_[i]) {
+			if (layer_disps_right_ && layer_disps_right_[i]) {
 				StereoCuda::FreePageLockedPtr(layer_disps_right_[i]);
 			}
 #else
-			if (layer_bytes_left_[i]){
+			if (layer_bytes_left_ && layer_bytes_left_[i]){
 				SafeDeleteArray(layer_bytes_left_[i]);
 			}
-			if (layer_bytes_right_[i]){
+			if (layer_bytes_right_ && layer_bytes_right_[i]){
 				SafeDeleteArray(layer_bytes_right_[i]);
 			}
-			if (layer_initial_disps_[i]){
+			if (layer_initial_disps_ && layer_initial_disps_[i]){
 				SafeDeleteArray(layer_initial_disps_[i]);
 			}
-			if (layer_disps_left_[i]){
+			if (layer_disps_left_ && layer_disps_left_[i]){
 				SafeDeleteArray(layer_disps_left_[i]);
 			}
-			if (layer_disps_right_[i]){
+			if (layer_disps_right_ && layer_disps_right_[i]){
 				SafeDeleteArray(layer_disps_right_[i]);
 			}
 #endif
+           
+            if (vision_stereo_ && vision_stereo_[i]) {
+                vision_stereo_[i]->Release();
+                SafeDelete(vision_stereo_[i]);
+            }
 		}
 	}
 	SafeDelete(vision_stereo_);

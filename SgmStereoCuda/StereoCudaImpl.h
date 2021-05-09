@@ -144,7 +144,7 @@ private:
 	/**\brief 视差图滤波器 */
 	DisparityFilter* filter_;
 
-	/**\brief 设备端视差图指针 */
+	/**\brief 主机端视差图指针 */
 	float32* disp_ptr_;
 	/**\brief 剔除小连通区并行参数结构变量 */
 	void** remove_peaks_;

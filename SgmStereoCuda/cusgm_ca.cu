@@ -1,5 +1,6 @@
 #include "cusgm_ca.cuh"
 #include "cusgm_types.h"
+#include "reduction.cuh"
 
 #define THREADS_COMMON	128
 
@@ -13,7 +14,7 @@ __device__ inline uint8* GetCostPtr(cudaPitchedPtr cost, sint32 x, sint32 y, sin
 }
 
 
-//reduction
+//=========================================reduction=========================================//
 template<class T>
 __device__ void ReduceMin(T* sdata, uint32& min)		
 {
@@ -76,9 +77,9 @@ __device__ void ReduceMin(T* sdata, uint32& min)
 	volatile T* smem = sdata;
 	uint32 blockSize = blockDim.x;
 	uint32 tid = threadIdx.x;
-	if (blockSize >= 512) {
+	/*if (blockSize >= 512) {
 		if (tid < 256) { smem[tid] = cu_min(smem[tid] ,smem[tid + 256]); } __syncthreads();
-	}
+	}*/
 	if (blockSize >= 256) {
 		if (tid < 128) { smem[tid] = cu_min(smem[tid], smem[tid + 128]); } __syncthreads();
 	}
@@ -92,12 +93,31 @@ __device__ void ReduceMin(T* sdata, uint32& min)
 		if (blockSize >= 8) smem[tid] = cu_min(smem[tid], smem[tid + 4]);
 		if (blockSize >= 4) smem[tid] = cu_min(smem[tid], smem[tid + 2]);
 		if (blockSize >= 2) smem[tid] = cu_min(smem[tid], smem[tid + 1]);
+		min = smem[0];
 	}
-	__syncthreads();
-	min = smem[0];
+	
 #endif
 }
-
+template<class T>
+__device__ void ReduceMin32(T* sdata, uint32& min)
+{
+	sint32 tid = threadIdx.x;
+	volatile T* smem = sdata;
+	sint32 local_min = smem[tid];
+	local_min = cu_min(local_min, smem[tid + 16]);
+	smem[tid] = local_min;
+	local_min = cu_min(local_min, smem[tid + 8]);
+	smem[tid] = local_min;
+	local_min = cu_min(local_min, smem[tid + 4]);
+	smem[tid] = local_min;
+	local_min = cu_min(local_min, smem[tid + 2]);
+	smem[tid] = local_min;
+	local_min = cu_min(local_min, smem[tid + 1]);
+	smem[tid] = local_min;
+	min = smem[0];
+}
+//=========================================reduction=========================================//
+	
 //parabola
 __device__ float32 SubPixBias(float32 c1, float32 c0, float32 c2)
 {
@@ -128,8 +148,9 @@ __global__ void Kernel_Aggregate_Up2Down(cudaPitchedPtr cost_init, cudaPitchedPt
 	__syncthreads();
 
 	uint32 min_cost_last = 0;
+	//ReduceMin<uint32>(sr_last_u + threadIdx.y * blockDim.x * 4 + blockDim.x * 2, min_cost_last);
 	ReduceMin<uint32>(sr_last_u + threadIdx.y * blockDim.x * 4 + blockDim.x * 2, min_cost_last);
-
+	
 	uint32 aggr_1 = c1;
 	uint32 aggr_2 = c2;
 	uint32 costptr_step = cost_init.ysize * cost_init.pitch;
@@ -448,7 +469,7 @@ __global__ void Kernel_Aggregate_Vertical_Warp(cudaPitchedPtr cost_init, cudaPit
 	sr_last_u[threadIdx.y * blockDim.x * 3 + blockDim.x + threadIdx.x] = c;
 
 	uint32 min_cost_last;
-	ReduceMin<uint32>(sr_last_u + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
+	ReduceMin32<uint32>(sr_last_u + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
 
 	uint32 aggr = c;
 
@@ -494,8 +515,7 @@ __global__ void Kernel_Aggregate_Vertical_Warp(cudaPitchedPtr cost_init, cudaPit
 		sr_last_u[data_offset + threadIdx.x] = aggr;
 		sr_last_u[data_offset + blockDim.x + threadIdx.x] = aggr;
 
-		ReduceMin<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
-		//min_cost_last = warpShflReduceMin(aggr);
+		ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
 		last_base_d = base_d;
 	}
 }
@@ -518,7 +538,7 @@ __global__ void Aggregate_U_Kernel_Warp(cudaPitchedPtr cost_init, cudaPitchedPtr
 	sr_last_u[threadIdx.y * blockDim.x * 3 + blockDim.x + threadIdx.x] = c;
 
 	uint32 min_cost_last;
-	ReduceMin<uint32>(sr_last_u + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
+	ReduceMin32<uint32>(sr_last_u + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
 
 	uint32 aggr = c;
 
@@ -563,7 +583,7 @@ __global__ void Aggregate_U_Kernel_Warp(cudaPitchedPtr cost_init, cudaPitchedPtr
 		sr_last_u[data_offset + threadIdx.x] = aggr;
 		sr_last_u[data_offset + blockDim.x + threadIdx.x] = aggr;
 
-		ReduceMin<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
+		ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
 		last_base_d = base_d;
 	}
 }
@@ -587,7 +607,7 @@ __global__ void Aggregate_U_Kernel_Warp(cudaPitchedPtr cost_init, cudaPitchedPtr
 	sr_last_u[threadIdx.y * blockDim.x * 3 + 2 * blockDim.x + threadIdx.x] = 0xFF;
 
 	uint32 min_cost_last;
-	ReduceMin<uint32>(sr_last_u + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
+	ReduceMin32<uint32>(sr_last_u + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
 
 	uint32 aggr = c;
 
@@ -636,7 +656,7 @@ __global__ void Aggregate_U_Kernel_Warp(cudaPitchedPtr cost_init, cudaPitchedPtr
 		sr_last_u[data_offset + threadIdx.x] = aggr;
 		sr_last_u[data_offset + blockDim.x + threadIdx.x] = aggr;
 
-		ReduceMin<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
+		ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
 		last_base_d = base_d;
 		lastBytes = base_bytes;
 	}
@@ -1224,7 +1244,7 @@ __global__ void Kernel_Aggregate_Horizontal_Warp(cudaPitchedPtr cost_init, cudaP
 	uint32 min_cost_last;
 
 #if 1
-	ReduceMin<uint32>(sr_last_l + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
+	ReduceMin32<uint32>(sr_last_l + threadIdx.y * blockDim.x * 3 + blockDim.x, min_cost_last);
 #else
 	ReduceMin<uint32>(sr_last_l + threadIdx.y * blockDim.x * 3, min_cost_last);
 #endif
@@ -1279,7 +1299,7 @@ __global__ void Kernel_Aggregate_Horizontal_Warp(cudaPitchedPtr cost_init, cudaP
 #if 1
 		sr_last_l[data_offset + threadIdx.x] = aggr;
 		sr_last_l[data_offset + blockDim.x + threadIdx.x] = aggr;
-		ReduceMin<uint32>(sr_last_l + data_offset + blockDim.x, min_cost_last);
+		ReduceMin32<uint32>(sr_last_l + data_offset + blockDim.x, min_cost_last);
 
 #else
 		sr_last_l[data_offset + threadIdx.x] = aggr;
@@ -1290,6 +1310,290 @@ __global__ void Kernel_Aggregate_Horizontal_Warp(cudaPitchedPtr cost_init, cudaP
 	}
 }
 
+
+template <sint32 DIRECTION>
+__global__ void Kernel_Aggregate_Horizontal_Warpfor32(cudaPitchedPtr cost_init, cudaPitchedPtr cost_path, sint32 width, sint32 height, sint32 min_disparity_, sint32 disp_range,
+	sint32 xoffset, sint32 yoffset, sint32 xEnd, sint32 p1, sint32 p2)
+{
+	//采用32线程计算同一个像素64视差范围的策略
+	//一个线程负责2个视差，提高规约效率
+	sint32 image_y = blockIdx.x * blockDim.y + threadIdx.y + yoffset;
+	if (image_y >= height)
+		return;
+
+	extern __shared__ uint32 sr_last_l[];
+
+	sint32 data_offset = threadIdx.y * blockDim.x * 2;
+	sint32 pixels_in_pitch = cost_init.pitch / disp_range;
+	uint8* cost_base_src = (uint8*)GetCostPtr(cost_init, DIRECTION == 0 ? xoffset : xEnd - 1, image_y, disp_range, pixels_in_pitch);
+	uint32 c = cost_base_src[threadIdx.x];
+	sr_last_l[data_offset + threadIdx.x] = c;
+	sr_last_l[data_offset + blockDim.x + threadIdx.x] = c;
+
+	uint32 min_cost_last;
+	ReduceMin32<uint32>(sr_last_l+ data_offset + blockDim.x, min_cost_last);
+
+	uint32 aggr = c;
+
+	sint32 costptr_step = DIRECTION == 0 ? disp_range : -disp_range;
+	uint8* cost_base_dst = (uint8*)GetCostPtr(cost_path, DIRECTION == 0 ? xoffset : xEnd - 1, image_y, disp_range, pixels_in_pitch);
+
+	//-------------------//
+	//从左到右聚合，一个block内N个线程负责2*N个候选视差计算，1个线程负责2个候选视差
+	for (sint32 i = 0; i < xEnd - xoffset - 1; i++) {
+		cost_base_src += costptr_step;
+		cost_base_dst += costptr_step;
+
+		uint32 Lr_2, Lr_3, Lr_4;
+		uint32 cost;
+		uint32 d;
+		Lr_4 = min_cost_last + p2;
+
+		cost = cost_base_src[threadIdx.x];
+
+		d = threadIdx.x;
+
+		if (d == 0)
+			Lr_2 = INVALID_COST;
+		else
+			Lr_2 = sr_last_l[data_offset + d - 1] + p1;
+		if (d == disp_range - 1)
+			Lr_3 = INVALID_COST;
+		else
+			Lr_3 = sr_last_l[data_offset + d + 1] + p1;
+
+		aggr = cost + (cu_min(cu_min(cu_min(aggr, Lr_2), Lr_3), Lr_4) - min_cost_last);
+
+		cost_base_dst[threadIdx.x] = aggr;
+
+		sr_last_l[data_offset + threadIdx.x] = aggr;
+		sr_last_l[data_offset + blockDim.x + threadIdx.x] = aggr;
+		ReduceMin32<uint32>(sr_last_l + data_offset + blockDim.x, min_cost_last);
+	}
+}
+template <sint32 DIRECTION>
+__global__ void Kernel_Aggregate_Vertical_Warpfor32(cudaPitchedPtr cost_init, cudaPitchedPtr cost_path, sint32 width, sint32 height, sint32 min_disparity_, sint32 disp_range,
+	sint32 xoffset, sint32 yoffset, sint32 yend, sint32 p1, sint32 p2)
+{
+	//采用32线程计算同一个像素64视差范围的策略
+	//一个线程负责2个视差，提高规约效率
+	sint32 image_x = blockIdx.x * blockDim.y + threadIdx.y + xoffset;
+	if (image_x >= width)
+		return;
+
+	extern __shared__ uint32 sr_last_u[];
+
+	sint32 data_offset = threadIdx.y * blockDim.x * 2;
+	sint32 pixels_in_pitch = cost_init.pitch / disp_range;
+	uint8* cost_base_src = GetCostPtr(cost_init, image_x, DIRECTION == 0 ? yoffset : yend - 1, disp_range, pixels_in_pitch);
+	uint32 c = cost_base_src[threadIdx.x];
+	sr_last_u[data_offset + threadIdx.x] = c;
+	sr_last_u[data_offset + blockDim.x + threadIdx.x] = c;
+
+	uint32 min_cost_last;
+	ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x, min_cost_last);
+
+	uint32 aggr = c;
+
+	sint32 costptr_step = (DIRECTION == 0) ? cost_init.ysize * cost_init.pitch : -cost_init.ysize * cost_init.pitch;
+	uint8* cost_base_dst = GetCostPtr(cost_path, image_x, (DIRECTION == 0) ? yoffset : yend - 1, disp_range, pixels_in_pitch);
+
+	//-------------------//
+	//从上到下聚合，一个block内N个线程负责2*N个候选视差计算，1个线程负责两个候选视差
+	for (sint32 i = 0; i < yend - 1 - yoffset; i++) {
+		cost_base_src += costptr_step;
+		cost_base_dst += costptr_step;
+
+		uint32 Lr_2, Lr_3, Lr_4;
+		uint32 cost;
+		uint32 d;
+		Lr_4 = min_cost_last + p2;
+
+		cost = cost_base_src[threadIdx.x];
+
+		d = threadIdx.x;
+
+		if (d == 0)
+			Lr_2 = INVALID_COST;
+		else
+			Lr_2 = sr_last_u[data_offset + d - 1] + p1;
+		if (d == disp_range - 1)
+			Lr_3 = INVALID_COST;
+		else
+			Lr_3 = sr_last_u[data_offset + d + 1] + p1;
+
+		aggr = cost + (cu_min(cu_min(cu_min(aggr, Lr_2), Lr_3), Lr_4) - min_cost_last);
+
+		cost_base_dst[threadIdx.x] = aggr;
+
+		sr_last_u[data_offset + threadIdx.x] = aggr;
+		sr_last_u[data_offset + threadIdx.x + blockDim.x] = aggr;
+
+		ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x , min_cost_last);
+	}
+}
+
+
+template <sint32 DIRECTION>
+__global__ void Kernel_Aggregate_Horizontal_Warpfor64(cudaPitchedPtr cost_init, cudaPitchedPtr cost_path, sint32 width, sint32 height, sint32 min_disparity_, sint32 disp_range,
+	sint32 xoffset, sint32 yoffset, sint32 xEnd, sint32 p1, sint32 p2)
+{
+	//采用32线程计算同一个像素64视差范围的策略
+	//一个线程负责2个视差，提高规约效率
+	sint32 image_y = blockIdx.x * blockDim.y + threadIdx.y + yoffset;
+	if (image_y >= height)
+		return;
+
+	extern __shared__ uint32 sr_last_l[];
+
+	sint32 data_offset = threadIdx.y * blockDim.x * 4;
+	sint32 pixels_in_pitch = cost_init.pitch / disp_range;
+	uint8* cost_base_src = (uint8*)GetCostPtr(cost_init, DIRECTION == 0 ? xoffset : xEnd - 1, image_y, disp_range, pixels_in_pitch);
+	uint32 c1 = cost_base_src[threadIdx.x];
+	uint32 c2 = cost_base_src[threadIdx.x + blockDim.x];
+	sr_last_l[data_offset + threadIdx.x] = c1;
+	sr_last_l[data_offset + blockDim.x * 1 + threadIdx.x] = c2;
+	sr_last_l[data_offset + blockDim.x * 2 + threadIdx.x] = cu_min(c1, c2);
+
+	uint32 min_cost_last;
+	ReduceMin32<uint32>(sr_last_l + data_offset + blockDim.x * 2, min_cost_last);
+
+	uint32 aggr[2];
+	aggr[0] = c1;
+	aggr[1] = c2;
+
+	sint32 costptr_step = DIRECTION == 0 ? disp_range : -disp_range;
+	uint8* cost_base_dst = (uint8*)GetCostPtr(cost_path, DIRECTION == 0 ? xoffset : xEnd - 1, image_y, disp_range, pixels_in_pitch);
+
+	//-------------------//
+	//从左到右聚合，一个block内N个线程负责2*N个候选视差计算，1个线程负责2个候选视差
+	for (sint32 i = 0; i < xEnd - xoffset - 1; i++) {
+		cost_base_src += costptr_step;
+		cost_base_dst += costptr_step;
+
+		uint32 Lr_2[2], Lr_3[2], Lr_4;
+		uint32 cost[2];
+		uint32 d[2];
+		Lr_4 = min_cost_last + p2;
+
+		cost[0] = cost_base_src[threadIdx.x];
+		cost[1] = cost_base_src[threadIdx.x + 1 * blockDim.x];
+
+		d[0] = threadIdx.x;
+		d[1] = threadIdx.x + 1 * blockDim.x;
+
+		if (d[0] == 0)
+			Lr_2[0] = INVALID_COST;
+		else
+			Lr_2[0] = sr_last_l[data_offset + d[0] - 1] + p1;
+		if (d[0] == disp_range - 1)
+			Lr_3[0] = INVALID_COST;
+		else
+			Lr_3[0] = sr_last_l[data_offset + d[0] + 1] + p1;
+		if (d[1] == 0)
+			Lr_2[1] = INVALID_COST;
+		else
+			Lr_2[1] = sr_last_l[data_offset + d[1] - 1] + p1;
+		if (d[1] == disp_range - 1)
+			Lr_3[1] = INVALID_COST;
+		else
+			Lr_3[1] = sr_last_l[data_offset + d[1] + 1] + p1;
+
+		aggr[0] = cost[0] + (cu_min(cu_min(cu_min(aggr[0], Lr_2[0]), Lr_3[0]), Lr_4) - min_cost_last);
+		aggr[1] = cost[1] + (cu_min(cu_min(cu_min(aggr[1], Lr_2[1]), Lr_3[1]), Lr_4) - min_cost_last);
+
+		cost_base_dst[threadIdx.x] = aggr[0];
+		cost_base_dst[threadIdx.x + 1 * blockDim.x] = aggr[1];
+
+		sr_last_l[data_offset + threadIdx.x] = aggr[0];
+		sr_last_l[data_offset + threadIdx.x + 1 * blockDim.x] = aggr[1];
+
+		sr_last_l[data_offset + blockDim.x * 2 + threadIdx.x] = cu_min(aggr[0], aggr[1]);
+
+		ReduceMin32<uint32>(sr_last_l + data_offset + blockDim.x * 2, min_cost_last);
+	}
+}
+template <sint32 DIRECTION>
+__global__ void Kernel_Aggregate_Vertical_Warpfor64(cudaPitchedPtr cost_init, cudaPitchedPtr cost_path, sint32 width, sint32 height, sint32 min_disparity_, sint32 disp_range,
+	sint32 xoffset, sint32 yoffset, sint32 yend, sint32 p1, sint32 p2)
+{
+	//采用32线程计算同一个像素64视差范围的策略
+	//一个线程负责2个视差，提高规约效率
+	sint32 image_x = blockIdx.x * blockDim.y + threadIdx.y + xoffset;
+	if (image_x >= width)
+		return;
+
+	extern __shared__ uint32 sr_last_u[];
+
+	sint32 data_offset = threadIdx.y * blockDim.x * 4;
+	sint32 pixels_in_pitch = cost_init.pitch / disp_range;
+	uint8* cost_base_src = GetCostPtr(cost_init, image_x, DIRECTION == 0 ? yoffset : yend - 1, disp_range, pixels_in_pitch);
+	uint32 c1 = cost_base_src[threadIdx.x];
+	uint32 c2 = cost_base_src[threadIdx.x + blockDim.x];
+	sr_last_u[data_offset + threadIdx.x] = c1;
+	sr_last_u[data_offset + blockDim.x * 1 + threadIdx.x] = c2;
+	sr_last_u[data_offset + blockDim.x * 2 + threadIdx.x] = cu_min(c1, c2);
+
+	uint32 min_cost_last;
+	ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x * 2, min_cost_last);
+
+	uint32 aggr[2];
+	aggr[0] = c1;
+	aggr[1] = c2;
+
+	sint32 costptr_step = (DIRECTION == 0) ? cost_init.ysize * cost_init.pitch : -cost_init.ysize * cost_init.pitch;
+	uint8* cost_base_dst = GetCostPtr(cost_path, image_x, (DIRECTION == 0) ? yoffset : yend - 1, disp_range, pixels_in_pitch);
+
+	//-------------------//
+	//从上到下聚合，一个block内N个线程负责2*N个候选视差计算，1个线程负责两个候选视差
+	for (sint32 i = 0; i < yend - 1 - yoffset; i++) {
+		cost_base_src += costptr_step;
+		cost_base_dst += costptr_step;
+
+		uint32 Lr_2[2], Lr_3[2], Lr_4;
+		uint32 cost[2];
+		uint32 d[2];
+		Lr_4 = min_cost_last + p2;
+
+		cost[0] = cost_base_src[threadIdx.x];
+		cost[1] = cost_base_src[threadIdx.x + 1 * blockDim.x];
+
+		d[0] = threadIdx.x;
+		d[1] = threadIdx.x + 1 * blockDim.x;
+
+		if (d[0] == 0)
+			Lr_2[0] = INVALID_COST;
+		else
+			Lr_2[0] = sr_last_u[data_offset + d[0] - 1] + p1;
+		if (d[0] == disp_range - 1)
+			Lr_3[0] = INVALID_COST;
+		else
+			Lr_3[0] = sr_last_u[data_offset + d[0] + 1] + p1;
+		if (d[1] == 0)
+			Lr_2[1] = INVALID_COST;
+		else
+			Lr_2[1] = sr_last_u[data_offset + d[1] - 1] + p1;
+		if (d[1] == disp_range - 1)
+			Lr_3[1] = INVALID_COST;
+		else
+			Lr_3[1] = sr_last_u[data_offset + d[1] + 1] + p1;
+
+		aggr[0] = cost[0] + (cu_min(cu_min(cu_min(aggr[0], Lr_2[0]), Lr_3[0]), Lr_4) - min_cost_last);
+		aggr[1] = cost[1] + (cu_min(cu_min(cu_min(aggr[1], Lr_2[1]), Lr_3[1]), Lr_4) - min_cost_last);
+
+		cost_base_dst[threadIdx.x] = aggr[0];
+		cost_base_dst[threadIdx.x + 1 * blockDim.x] = aggr[1];
+
+		sr_last_u[data_offset + threadIdx.x] = aggr[0];
+		sr_last_u[data_offset + threadIdx.x + 1 * blockDim.x] = aggr[1];
+
+		sr_last_u[data_offset + blockDim.x * 2 + threadIdx.x] = cu_min(aggr[0], aggr[1]);
+
+		ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x * 2, min_cost_last);
+	}
+}
+
+	
 template <sint32 DIRECTION>
 __global__ void Kernel_Aggregate_Horizontal_Warpfor128(cudaPitchedPtr cost_init, cudaPitchedPtr cost_path, sint32 width, sint32 height, sint32 min_disparity_, sint32 disp_range,
 	sint32 xoffset, sint32 yoffset, sint32 xEnd, sint32 p1, sint32 p2)
@@ -1315,7 +1619,7 @@ __global__ void Kernel_Aggregate_Horizontal_Warpfor128(cudaPitchedPtr cost_init,
 	sr_last_l[data_offset + blockDim.x * 5 + threadIdx.x] = 0xFF;
 
 	uint32 min_cost_last;
-	ReduceMin<uint32>(sr_last_l + threadIdx.y * blockDim.x * 6 + blockDim.x * 4, min_cost_last);
+	ReduceMin32<uint32>(sr_last_l + data_offset + blockDim.x * 4, min_cost_last);
 
 	uint32 aggr[4];
 	aggr[0] = c1;
@@ -1397,7 +1701,7 @@ __global__ void Kernel_Aggregate_Horizontal_Warpfor128(cudaPitchedPtr cost_init,
 
 		sr_last_l[data_offset + blockDim.x * 4 + threadIdx.x] = cu_min(cu_min(aggr[0], aggr[1]), cu_min(aggr[2], aggr[3]));
 
-		ReduceMin<uint32>(sr_last_l + data_offset + blockDim.x * 4, min_cost_last);
+		ReduceMin32<uint32>(sr_last_l + data_offset + blockDim.x * 4, min_cost_last);
 	}
 }
 template <sint32 DIRECTION>
@@ -1426,7 +1730,7 @@ __global__ void Kernel_Aggregate_Vertical_Warpfor128(cudaPitchedPtr cost_init, c
 	sr_last_u[data_offset + blockDim.x * 4 + threadIdx.x] = cu_min(cu_min(c1, c2), cu_min(c3, c4));
 
 	uint32 min_cost_last;
-	ReduceMin<uint32>(sr_last_u + data_offset + blockDim.x * 4, min_cost_last);
+	ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x * 4, min_cost_last);
 
 	uint32 aggr[4];
 	aggr[0] = c1;
@@ -1438,7 +1742,7 @@ __global__ void Kernel_Aggregate_Vertical_Warpfor128(cudaPitchedPtr cost_init, c
 	uint8* cost_base_dst = GetCostPtr(cost_path, image_x, (DIRECTION == 0) ? yoffset : yend - 1, disp_range, pixels_in_pitch);
 
 	//-------------------//
-	//从上到下聚合，一个block内N个线程负责2*N个候选视差计算，1个线程负责两个候选视差
+	//从上到下聚合，一个block内N个线程负责4*N个候选视差计算，1个线程负责4个候选视差
 	for (sint32 i = 0; i < yend - 1 - yoffset; i++) {
 		cost_base_src += costptr_step;
 		cost_base_dst += costptr_step;
@@ -1508,7 +1812,7 @@ __global__ void Kernel_Aggregate_Vertical_Warpfor128(cudaPitchedPtr cost_init, c
 
 		sr_last_u[data_offset + blockDim.x * 4 + threadIdx.x] = cu_min(cu_min(aggr[0], aggr[1]), cu_min(aggr[2], aggr[3]));
 
-		ReduceMin<uint32>(sr_last_u + data_offset + blockDim.x * 4, min_cost_last);
+		ReduceMin32<uint32>(sr_last_u + data_offset + blockDim.x * 4, min_cost_last);
 	}
 }
 
@@ -3006,7 +3310,7 @@ __global__ void Kernel_ComputeDisparityByWTA_Warp(
 
 		uint32 cost = cost_path_1 + cost_path_2 + cost_path_3 + cost_path_4;
 
-#if 0	//使用共享内存
+#if 1	//使用共享内存
 		sr_cost[data_offset + threadIdx.x] = cost;
 		sr_cost[data_offset + blockDim.x + threadIdx.x] = cost;
 		sr_cost[data_offset + 2 * blockDim.x + threadIdx.x] = 0xFFFF;
@@ -3016,8 +3320,8 @@ __global__ void Kernel_ComputeDisparityByWTA_Warp(
 
 		uint32 minCost;
 		uint32 secMinCost;
-#if 0
-		ReduceMin<uint32>(sr_cost + data_offset + blockDim.x, minCost);
+#if 1
+		ReduceMin32<uint32>(sr_cost + data_offset + blockDim.x, minCost);
 #else
 		ReduceMin<uint32>(sr_cost + data_offset, minCost);
 
@@ -3033,7 +3337,7 @@ __global__ void Kernel_ComputeDisparityByWTA_Warp(
 				disp = INVALID_VALUE;
 			}
 			else {
-#if 0
+#if 1
 				float32 c1 = sr_cost[data_offset + init_disp - 1];
 				float32 c2 = minCost;
 				float32 c3 = sr_cost[data_offset + init_disp + 1];
@@ -3432,28 +3736,44 @@ void CostAggregator::Aggregate(sint16* init_disp_mat, const size_t& idp_psize, c
 	}
 	else
 	{
-		if (disp_range != 128) {
-			cusgm_ca::Kernel_Aggregate_Up2Down << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
-				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_,ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Left2Right << <block2_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_, 
-				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_,ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Down2Up << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_, 
-				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_,ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Right2Left << <block2_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_, 
-				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_,ca_p2_);
-		}
-		else {
+		if(disp_range == 128)
+		{
 			dim3 threadsWarp(32, cu_max(1, THREADS_COMMON / 32));
 			dim3 blockWarp(ceil((roi_w * 1.0) / threadsWarp.y), 1);
 			dim3 blockWarp2(ceil((roi_h * 1.0) / threadsWarp.y), 1);
 			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor128<0> << <blockWarp, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
-				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_,ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor128<0> << <blockWarp2, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_, 
-				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_,ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor128<1> << <blockWarp, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_, 
-				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_,ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor128<1> << <blockWarp2, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_, 
-				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_,ca_p2_);
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor128<0> << <blockWarp2, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor128<1> << <blockWarp, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor128<1> << <blockWarp2, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+		}
+		if(disp_range == 64)
+		{
+			dim3 threadsWarp(32, cu_max(1, THREADS_COMMON / 32));
+			dim3 blockWarp(ceil((roi_w * 1.0) / threadsWarp.y), 1);
+			dim3 blockWarp2(ceil((roi_h * 1.0) / threadsWarp.y), 1);
+			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor64<0> << <blockWarp, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor64<0> << <blockWarp2, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor64<1> << <blockWarp, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor64<1> << <blockWarp2, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+		}
+		else
+		{
+			cusgm_ca::Kernel_Aggregate_Up2Down << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Left2Right << <block2_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Down2Up << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Right2Left << <block2_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
 		}
 		for (sint32 i = 0; i < 4; i++)
 			cudaStreamSynchronize(streams[i]);
@@ -3561,18 +3881,8 @@ void CostAggregator::LRCheck(CostComputor* cost_computor, float32 lr_check_thres
 		}
 	}
 	else {
-		if (disp_range != 128) {
-			cusgm_ca::Kernel_Aggregate_Up2Down << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
-				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Left2Right << <block_CA2, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_,
-				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Down2Up << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_,
-				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
-			cusgm_ca::Kernel_Aggregate_Right2Left << <block_CA2, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
-				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
-			
-		}
-		else {
+		if (disp_range == 128)
+		{
 			dim3 threadsWarp(32, cu_max(1, THREADS_COMMON / 32));
 			dim3 blockWarp(ceil((roi_w * 1.0) / threadsWarp.y), 1);
 			dim3 blockWarp2(ceil((roi_h * 1.0) / threadsWarp.y), 1);
@@ -3584,8 +3894,33 @@ void CostAggregator::LRCheck(CostComputor* cost_computor, float32 lr_check_thres
 				width_, height_, min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
 			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor128<1> << <blockWarp2, threadsWarp, 6 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3],
 				width_, height_, min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
-			
 		}
+		if (disp_range == 64)
+		{
+			dim3 threadsWarp(32, cu_max(1, THREADS_COMMON / 32));
+			dim3 blockWarp(ceil((roi_w * 1.0) / threadsWarp.y), 1);
+			dim3 blockWarp2(ceil((roi_h * 1.0) / threadsWarp.y), 1);
+			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor64<0> << <blockWarp, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor64<0> << <blockWarp2, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Vertical_Warpfor64<1> << <blockWarp, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Horizontal_Warpfor64<1> << <blockWarp2, threadsWarp, 4 * threadsWarp.x * threadsWarp.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+		}
+		else
+		{
+			cusgm_ca::Kernel_Aggregate_Up2Down << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[0] >> > (cost_init, cost_aggr_dir_[0], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Left2Right << <block_CA2, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[1] >> > (cost_init, cost_aggr_dir_[1], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Down2Up << <block_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[2] >> > (cost_init, cost_aggr_dir_[2], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_y + roi_h, ca_p1_, ca_p2_);
+			cusgm_ca::Kernel_Aggregate_Right2Left << <block_CA2, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
+				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
+		}
+		
 		for (sint32 i = 0; i < 4; i++)
 			cudaStreamSynchronize(streams[i]);
 

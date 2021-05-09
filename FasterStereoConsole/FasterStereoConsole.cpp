@@ -19,10 +19,10 @@ using namespace std;
 
 #include "FasterStereoCuda.h"
 #ifdef _DEBUG
-#pragma comment(lib,"opencv_world320d.lib")
+#pragma comment(lib,"opencv_world310d.lib")
 #pragma comment(lib, "FasterStereoCudad.lib")
 #else
-#pragma comment(lib,"opencv_world320.lib")
+#pragma comment(lib,"opencv_world310.lib")
 #pragma comment(lib, "FasterStereoCuda.lib")
 #endif
 
@@ -203,15 +203,15 @@ int main(int argc, char** argv)
 	/********************************************************/
 	/*set windows of results*/
 	namedWindow("left", WINDOW_NORMAL);
-	namedWindow("right", WINDOW_NORMAL);
-	namedWindow("d_map", WINDOW_NORMAL);
+	//namedWindow("right", WINDOW_NORMAL);
+	//namedWindow("d_map", WINDOW_NORMAL);
 	namedWindow("d_map_color", WINDOW_NORMAL); 
-	double scale = width / 640.0;
+	double scale = std::max(1.0,width / 640.0);
 	resizeWindow("left", int(width / scale), int(height / scale));
-	resizeWindow("right", int(width / scale), int(height / scale));
-	resizeWindow("d_map", int(width / scale), int(height / scale));
+	//resizeWindow("right", int(width / scale), int(height / scale));
+	//resizeWindow("d_map", int(width / scale), int(height / scale));
 	resizeWindow("d_map_color", int(width / scale), int(height / scale));
-
+	
 	/********************************************************/
 	/*matching(for loop)*/
 	int time_count = 0;
@@ -283,12 +283,16 @@ int main(int argc, char** argv)
 				}
 			}
 		}
-		double fps = int(1000.0 / time_avg * 10 + 0.5) / 10.0;
-		printf(" fps = %6.4lf\n", fps);
+		double fps = int(1000.0 / time_avg * 100 + 0.5) / 100.0;
+		string str_fps = "frame " + to_string(time_count) + ", fps = " + to_string(fps);
+		
+		printf("fps = %6.4lf\n", fps);
 		applyColorMap(disp_mat, disp_color, COLORMAP_JET);
 		imshow("left", mat_left);
-		imshow("right", mat_right);
-		imshow("d_map", disp_mat);
+		//imshow("right", mat_right);
+		//imshow("d_map", disp_mat);
+		auto font = cv::FONT_HERSHEY_SIMPLEX;
+		cv::putText(disp_color, str_fps, Point(20, 25), font, 1, CV_RGB(255, 255, 255), 5, cv::LINE_AA);
 		imshow("d_map_color", disp_color);
 		cvWaitKey(1);
 
@@ -299,6 +303,7 @@ int main(int argc, char** argv)
 
 		// loop
 		i = ++i % left_mats.size();
+        //break;
 	}
 
 	/********************************************************/
