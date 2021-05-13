@@ -14,6 +14,8 @@
 #include <chrono>
 using namespace std::chrono;
 
+#define USING_PAGE_LOCKED_MEMORY
+
 StereoCudaImpl::StereoCudaImpl() :	cu_img_left_(nullptr), cu_img_right_(nullptr), cu_disp_out_(nullptr), cu_depth_left_(nullptr),
 									cu_inidisp_left_(nullptr), cu_inidisp_right_(nullptr), cu_inidisp_tmp_(nullptr), inidisp_tmp_(nullptr),
 									cam_param_(), min_disparity_(0), disp_range_(0),
@@ -262,7 +264,13 @@ bool StereoCudaImpl::Init2(sint32 width, sint32 height, sint32 min_disparity, si
 	if (!Init(width, height, min_disparity, disp_range, sgm_option, print_log))
 		return false;
 
+	// malloc memory for disp_ptr_
+#ifdef USING_PAGE_LOCKED_MEMORY
 	MallocPageLockedPtr((void**)(&disp_ptr_), width * height * sizeof(float32));
+#else
+	disp_ptr_ = new float32[width*height];
+#endif
+
 	cam_param_ = cam_param;
 	cudaMallocPitch((void**)&cu_depth_left_, &dp_psize_, size_t(width_) * sizeof(float32), size_t(height_));
 	return true;
@@ -303,7 +311,14 @@ void StereoCudaImpl::Release()
 		delete[] inidisp_tmp_;
 		inidisp_tmp_ = nullptr;
 	}
+	
+#ifdef USING_PAGE_LOCKED_MEMORY
 	FreePageLockedPtr(disp_ptr_);
+#else
+	if(disp_ptr_) {
+		delete[] disp_ptr_; disp_ptr_ = nullptr;
+	}
+#endif
 
 	if (cu_streams_) {
 		for (sint32 i = 0; i < 2; i++) {
