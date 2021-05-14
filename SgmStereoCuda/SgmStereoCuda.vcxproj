@@ -204,7 +204,6 @@ copy $(OutDir)$(TargetName).dll $(SolutionDir)library\StereoCuda\dll\</Command>
     <ClInclude Include="cusgm_df.h" />
     <ClInclude Include="cusgm_types.h" />
     <ClInclude Include="cusgm_util.cuh" />
-    <ClInclude Include="reduction.cuh" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="StereoCuda.h" />
     <ClInclude Include="StereoCudaImpl.h" />
