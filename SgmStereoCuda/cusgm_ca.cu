@@ -3389,6 +3389,12 @@ __global__ void Kernel_ComputeDisparityByWTA_Warp(
 		ReduceMin32ShuffleSync<uint32>(min_cost);
 #endif
 
+#if 0
+		float32 c1 = __shfl_up_sync(0xffffffff, cost, 1);
+		float32 c3 = __shfl_down_sync(0xffffffff, cost, 1);
+		float32 c2 = min_cost;
+#endif
+		
 		if (cost == min_cost) {
 			//确定整像素视差值，并计算子像素位置
 			float32 unique_threshold = 1.0f - uniqueness;
@@ -3401,12 +3407,8 @@ __global__ void Kernel_ComputeDisparityByWTA_Warp(
 				float32 c1 = sr_cost[data_offset + init_disp - 1];
 				float32 c2 = min_cost;
 				float32 c3 = sr_cost[data_offset + init_disp + 1];
-#else
-				float32 c1 = static_cast<float32>(cost1);
-				float32 c2 = min_cost;
-				float32 c3 = static_cast<float32>(cost2);
-
 #endif
+				
 				float32 uniq = cu_min(c1 - c2, c3 - c2);
 				if (uniq <= c2 * unique_threshold)
 					disp = INVALID_VALUE;
@@ -3462,7 +3464,7 @@ __global__ void Kernel_ComputeDisparityByWTA_Warpfor32(
 
 		uint32 cost = cost_path_1_1 + cost_path_2_1 + cost_path_3_1 + cost_path_4_1;
 
-		sint32 data_offset = threadIdx.y * (2 * blockDim.x);
+		sint32 data_offset = threadIdx.y * (blockDim.x + 1);
 		sr_cost[data_offset + threadIdx.x] = cost;
 
 		auto min_cost = cost;
@@ -3560,9 +3562,9 @@ __global__ void Kernel_ComputeDisparityByWTA_Warpfor64(
 		uint32 cost1 = cost_path_1_1 + cost_path_2_1 + cost_path_3_1 + cost_path_4_1;
 		uint32 cost2 = cost_path_1_2 + cost_path_2_2 + cost_path_3_2 + cost_path_4_2;
 
-		sint32 data_offset = threadIdx.y * (4 * blockDim.x);
+		sint32 data_offset = threadIdx.y *(2 * blockDim.x + 1);
 		sr_cost[data_offset + threadIdx.x] = cost1;
-		sr_cost[data_offset + 1 * blockDim.x + threadIdx.x] = cost2;
+		sr_cost[data_offset + blockDim.x + threadIdx.x] = cost2;
 
 		auto min_cost = cu_min(cost1, cost2);
 #if CUDA_VERSION < 9000
@@ -3581,28 +3583,20 @@ __global__ void Kernel_ComputeDisparityByWTA_Warpfor64(
 			sr_cost[data_offset + 2 * blockDim.x] = threadIdx.x + blockDim.x;
 			//min_idx = threadIdx.x + blockDim.x;
 		}
-#if CUDA_VERSION < 9000
-		__syncthreads();
-#endif
+		
 		//确定整像素视差值，并计算子像素位置
 		if (threadIdx.x == 0) {
 			float32 unique_threshold = 1.0f - uniqueness;
 			sint32 init_disp = sr_cost[data_offset + 2 * blockDim.x];
-			//sint32 init_disp = __shfl_sync(0, min_idx, min_idx);
 			if (init_disp <= 0 || init_disp >= disp_range) {
 				disp = INVALID_VALUE;
 			}
 			else {
 				//compute the extreme value of  parabola 
-#if CUDA_VERSION > 9000
 				float32 c1 = sr_cost[data_offset + (init_disp - 1)];
 				float32 c2 = min_cost;
 				float32 c3 = sr_cost[data_offset + (init_disp + 1)];
-#else
-				float32 c1 = __shfl_sync(0, init_disp - 1);
-				float32 c2 = min_cost;
-				float32 c3 = __shfl_sync(0, init_disp + 1);
-#endif
+
 				float32 uniq = cu_min(c1 - c2, c3 - c2);
 				if (uniq <= c2 * unique_threshold)
 					disp = INVALID_VALUE;
@@ -3675,9 +3669,9 @@ __global__ void Kernel_ComputeDisparityByWTA_Warpfor128(
 		uint32 cost3 = cost_path_1_3 + cost_path_2_3 + cost_path_3_3 + cost_path_4_3;
 		uint32 cost4 = cost_path_1_4 + cost_path_2_4 + cost_path_3_4 + cost_path_4_4;
 
-		sint32 data_offset = threadIdx.y * (6 * blockDim.x);
+		sint32 data_offset = threadIdx.y * 4 * blockDim.x + 1;
 		sr_cost[data_offset + threadIdx.x] = cost1;
-		sr_cost[data_offset + 1 * blockDim.x + threadIdx.x] = cost2;
+		sr_cost[data_offset + blockDim.x + threadIdx.x] = cost2;
 		sr_cost[data_offset + 2 * blockDim.x + threadIdx.x] = cost3;
 		sr_cost[data_offset + 3 * blockDim.x + threadIdx.x] = cost4;
 
@@ -3985,7 +3979,7 @@ void CostAggregator::Aggregate(sint16* init_disp_mat, const size_t& idp_psize, c
 			for (sint32 i = 0; i < 4; i++)
 				cudaStreamSynchronize(streams[i]);
 			//将各个方向代价相加到最终的代价数组中,然后统计最小代价
-			const sint32 n_lines = 8;
+			const sint32 n_lines = 4;
 			dim3 threads_PA(disp_range, THREADS_COMMON / disp_range);
 			dim3 block_PA(ceil((roi_w * 1.0) / threads_PA.y), roi_h / n_lines);
 			cusgm_ca::Kernel_ComputeDisparityByWTA_Warp<n_lines> << <block_PA, threads_PA, threads_PA.x * threads_PA.y * sizeof(uint32) >> > (cost_aggr_dir_[0], cost_aggr_dir_[2], cost_aggr_dir_[1], cost_aggr_dir_[3], 
@@ -4159,7 +4153,7 @@ void CostAggregator::LRCheck(CostComputor* cost_computor, float32 lr_check_thres
 			for (sint32 i = 0; i < 4; i++)
 				cudaStreamSynchronize(streams[i]);
 			//将各个方向代价相加到最终的代价数组中,然后统计最小代价
-			const sint32 n_lines = 8;
+			const sint32 n_lines = 4;
 			dim3 threads_PA(disp_range, THREADS_COMMON / disp_range);
 			dim3 block_PA(ceil((roi_w * 1.0) / threads_PA.y), roi_h / n_lines);
 			cusgm_ca::Kernel_ComputeDisparityByWTA_Warp<n_lines> << <block_PA, threads_PA, threads_PA.x * threads_PA.y * sizeof(uint32) >> > (cost_aggr_dir_[0], cost_aggr_dir_[1], cost_aggr_dir_[2], cost_aggr_dir_[3],

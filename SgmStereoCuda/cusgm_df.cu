@@ -294,37 +294,39 @@ void DisparityFilter::Filter()
 
 	// 形态学处理
 	if (morphology_type_ != CuSGMOption::MP_Type::MP_NONE) {
+		const auto s = cu_min(width_, height_);
+		const auto wnd_size = s < 360 ? 3 : (s < 720 ? 5 : 7);
 		if (disp_map_out_ == disp_map_) {
 			if (morphology_type_ == CuSGMOption::MP_Type::MP_EROSION) {			// 腐蚀
-				ErosionCuda(disp_map_filter_, disp_map_out_, 5, width_, height_, dp_psize_);
+				ErosionCuda(disp_map_filter_, disp_map_out_, wnd_size, width_, height_, dp_psize_);
 			}
 			else if (morphology_type_ == CuSGMOption::MP_Type::MP_DILATION) {	// 膨胀
-				DilationCuda(disp_map_filter_, disp_map_out_, 5, width_, height_, dp_psize_);
+				DilationCuda(disp_map_filter_, disp_map_out_, wnd_size, width_, height_, dp_psize_);
 			}
 			else if (morphology_type_ == CuSGMOption::MP_Type::MP_OPEN){		// 开运算
-				ErosionCuda(disp_map_filter_, disp_map_out_, 5, width_, height_, dp_psize_);
-				DilationCuda(disp_map_filter_, disp_map_out_, 5, width_, height_, dp_psize_);
+				ErosionCuda(disp_map_filter_, disp_map_out_, wnd_size, width_, height_, dp_psize_);
+				DilationCuda(disp_map_filter_, disp_map_out_, wnd_size, width_, height_, dp_psize_);
 			}
 			else if (morphology_type_ == CuSGMOption::MP_Type::MP_CLOSE) {		// 闭运算
-				DilationCuda(disp_map_filter_, disp_map_out_, 5, width_, height_, dp_psize_);
-				ErosionCuda(disp_map_filter_, disp_map_out_, 5, width_, height_, dp_psize_);
+				DilationCuda(disp_map_filter_, disp_map_out_, wnd_size, width_, height_, dp_psize_);
+				ErosionCuda(disp_map_filter_, disp_map_out_, wnd_size, width_, height_, dp_psize_);
 			}
 			disp_map_out_ = disp_map_filter_;
 		}
 		else {
 			if (morphology_type_ == CuSGMOption::MP_Type::MP_EROSION) {
-				ErosionCuda(disp_map_, disp_map_filter_, 5, width_, height_, dp_psize_);
+				ErosionCuda(disp_map_, disp_map_filter_, wnd_size, width_, height_, dp_psize_);
 			}
 			else if (morphology_type_ == CuSGMOption::MP_Type::MP_DILATION) {
-				DilationCuda(disp_map_, disp_map_filter_, 5, width_, height_, dp_psize_);
+				DilationCuda(disp_map_, disp_map_filter_, wnd_size, width_, height_, dp_psize_);
 			}
 			else if (morphology_type_ == CuSGMOption::MP_Type::MP_OPEN) {
-				ErosionCuda(disp_map_, disp_map_filter_, 5, width_, height_, dp_psize_);
-				DilationCuda(disp_map_, disp_map_filter_, 5, width_, height_, dp_psize_);
+				ErosionCuda(disp_map_, disp_map_filter_, wnd_size, width_, height_, dp_psize_);
+				DilationCuda(disp_map_, disp_map_filter_, wnd_size, width_, height_, dp_psize_);
 			}
 			else if (morphology_type_ == CuSGMOption::MP_Type::MP_CLOSE) {
-				DilationCuda(disp_map_, disp_map_filter_, 5, width_, height_, dp_psize_);
-				ErosionCuda(disp_map_, disp_map_filter_, 5, width_, height_, dp_psize_);
+				DilationCuda(disp_map_, disp_map_filter_, wnd_size, width_, height_, dp_psize_);
+				ErosionCuda(disp_map_, disp_map_filter_, wnd_size, width_, height_, dp_psize_);
 			}
 			disp_map_out_ = disp_map_;
 		}

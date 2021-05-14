@@ -186,7 +186,7 @@ void SetSgmParameters(const bool& do_lr_check, const bool& do_rm_peaks, const bo
 	sgm_param.cs_type = CuSGMOption::CS_5x5;
 	sgm_param.num_paths = 4;
 	sgm_param.unique_threshold = (layer_id == 0) ? 0.95f : 1.0f;
-	sgm_param.lr_threshold = (layer_id == 0) ? 1.0f : 0.8f;
+	sgm_param.lr_threshold = (layer_id == 0) ? 1.0f : 1.0f;
 	sgm_param.do_median_filter = true;
 	sgm_param.post_filter_type = (layer_id == 0) ? (do_smooth ? CuSGMOption::PF_GAUSS : CuSGMOption::PF_NONE) : CuSGMOption::PF_NONE;
 	sgm_param.using_constant_p2 = true;
@@ -200,7 +200,7 @@ void SetSgmParameters(const bool& do_lr_check, const bool& do_rm_peaks, const bo
 		sgm_param.do_lr_check = (layer_id == 0) ? false : do_lr_check;
 		sgm_param.do_remove_peaks = (layer_id == 0) ? false : do_rm_peaks;
 		sgm_param.peaks_ratio_threshold = (layer_id == 0) ? 0.0005f : 0.001f;
-		sgm_param.morphology_type = CuSGMOption::MP_NONE;
+		sgm_param.morphology_type = (layer_id < num_layers - 1) ? CuSGMOption::MP_NONE : CuSGMOption::MP_DILATION;
 	}
 	else {
 		sgm_param.do_lr_check = (layer_id < num_layers - 1) ? false : do_lr_check;
