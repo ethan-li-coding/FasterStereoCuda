@@ -30,6 +30,8 @@ using namespace std;
 
 // using page locked memory
 #define USING_PAGE_LOCKED_MEMORY
+// run matching only once
+//#define RUN_ONCE
 
 void LoadDatas(const string& path_left,const string& path_right,const string& file_type, vector<Mat>& left_mats,vector<Mat>& right_mats)
 {
@@ -72,6 +74,9 @@ void LoadDatas(const string& path_left, const string& path_right, vector<Mat>& l
  *		  mode2(multiple pairs): folder1 folder2 png option.xml
  *		  mode3: opt
  */
+
+// $(SolutionDir)Data\KITTI\image_2 $(SolutionDir)Data\KITTI\image_3 png  $(SolutionDir)Data\KITTI\option.xml
+
 int main(int argc, char** argv)
 {
 	if (argc < 2){
@@ -303,7 +308,9 @@ int main(int argc, char** argv)
 
 		// loop
 		i = ++i % left_mats.size();
-        //break;
+#ifdef RUN_ONCE
+		break;
+#endif
 	}
 
 	/********************************************************/
