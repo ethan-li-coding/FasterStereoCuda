@@ -7,7 +7,7 @@
     <RemoteDebuggerCommand>$(TargetPath)</RemoteDebuggerCommand>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LocalDebuggerCommandArguments>$(SolutionDir)Data\Building\left.bmp $(SolutionDir)Data\Building\right.bmp $(SolutionDir)Data\Building\option.xml</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>$(SolutionDir)Data\Cone\left.png $(SolutionDir)Data\Cone\right.png  $(SolutionDir)Data\Cone\option.xml</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

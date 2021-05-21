@@ -3941,9 +3941,9 @@ bool CostAggregator::Initialize(const sint32& width, const sint32& height, const
 	extent = make_cudaExtent(temp.pitch, size_t(width_) / (cu_max(1, temp.pitch / disp_range)), height_);
 	cudaFree(temp.ptr);
 
-	if (!CudaSafeCall(cudaMalloc3D(&cost_aggr_, extent))) {
+	/*if (!CudaSafeCall(cudaMalloc3D(&cost_aggr_, extent))) {
 		return false;
-	}
+	}*/
 	for (int k = 0; k < PATH_NUM; k++) {
 		if (!CudaSafeCall(cudaMalloc3D(&cost_aggr_dir_[k], extent))) {
 			return false;
