@@ -276,10 +276,23 @@ bool HierSgmCudaImpl::Init(const ste_opt1_t& option)
 
 		//π¿º∆ ”≤Ó∑∂Œß
 		int disparity_min = min_disp / scale, disparity_max = max_disp / scale;
-		int disparity_range;
+		int disparity_range = 32;
 		if (i == num_layers_ - 1) {
 			disparity_range = disparity_max - disparity_min;
-			disparity_range =/* disparity_range <= 32 ? 32 :*/ (disparity_range + 63) / 64 * 64;
+			int k = 6;
+			while (pow(2, k) < disparity_range) {
+				k++;
+			}
+			disparity_range = pow(2, k);
+			if (disparity_range > 2 * width) {
+				disparity_range /= 2;
+			}
+			if (disparity_min >= width) {
+				disparity_min = width - disparity_range;
+				if (disparity_min < -width) {
+					disparity_min = -width;
+				}
+			}
 		}
 		else {
 			disparity_min = 0.0; disparity_max = StereoCuda::get_level_range();
@@ -375,9 +388,18 @@ bool HierSgmCudaImpl::Init2(const ste_opt2_t& option)
 			disparity_max = cam_param.baseline * cam_param.focus / min_depth - cam_param.x0_right + cam_param.x0_left;
 			disparity_range = disparity_max - disparity_min;
 			int k = 6;
-			while (pow(2, k) < disparity_range - 5)
+			while (pow(2, k) < disparity_range)
 				k++;
 			disparity_range = pow(2, k);
+			if (disparity_range > 2 * width) {
+				disparity_range /= 2;
+			}
+			if (disparity_min >= width) {
+				disparity_min = width - disparity_range;
+				if (disparity_min < -width) {
+					disparity_min = -width;
+				}
+			}
 		}
 		else {
 			disparity_min = 0.0; disparity_max = StereoCuda::get_level_range();

@@ -34,9 +34,11 @@ inline bool CudaSafeCall(cudaError err)
 	}
 }
 
+#define SafeCudaFree(Ptr) { if(Ptr) cudaFree(Ptr); Ptr = nullptr; }
+
 inline void safeFree3D(cudaPitchedPtr* ptr)
 {
-	if (ptr) { if (ptr->ptr) { cudaFree(ptr->ptr); } }
+	if (ptr) { if (ptr->ptr) { (cudaFree(ptr->ptr)); ptr->ptr = nullptr; } }
 }
 
 #endif

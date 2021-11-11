@@ -63,6 +63,22 @@ bool StereoCuda::Match2(uint8* img_left, uint8* img_right, float32* depth_left, 
 	}
 }
 
+void StereoCuda::SetMinDisparity(const sint32& min_disparty)
+{
+	auto impl = static_cast<StereoCudaImpl*>(impl_);
+	if (impl) {
+		return impl->SetMinDisparity(min_disparty);
+	}
+}
+
+sint32 StereoCuda::GetDispartyRange()
+{
+	auto impl = static_cast<StereoCudaImpl*>(impl_);
+	if (impl) {
+		return impl->GetDispartyRange();
+	}
+}
+
 void StereoCuda::GetRoiFromDispMap(float32* disp_ptr, sint32 width, sint32 height, StereoROI_T& ste_roi)
 {
 	StereoCudaImpl::GetRoiFromDispMap(disp_ptr, width, height, ste_roi);

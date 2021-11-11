@@ -23,7 +23,7 @@
     <ProjectGuid>{804EFA21-9D50-4CB2-8056-A2252C488B24}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>TrialGenerator</RootNamespace>
-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

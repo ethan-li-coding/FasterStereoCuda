@@ -27,7 +27,7 @@ public:
 	bool Initialize(const sint32& width, const sint32& height, const sint32& min_disparity, const sint32& max_disparity, const sint32& cs_mode = 0);
 
 	/** \brief release memory */
-	void Release() const;
+	void Release();
 
 	/**
 	 * \brief 为代价计算设置数据
@@ -52,6 +52,8 @@ public:
 	 */
 	void ComputeCost(sint16* init_disp_mat = nullptr, const size_t& idp_psize = 0, const StereoROI_T* ste_roi = nullptr, const bool& left2right = true) const;
 
+	void SetMinDisparity(const sint32& min_disparity);
+	
 	/** \brief 获取设备端初始代价指针 */
 	cudaPitchedPtr* get_cost_ptr() const;
 private:

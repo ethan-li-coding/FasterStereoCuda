@@ -117,7 +117,8 @@ public:
 		auto* rmp = static_cast<ThreadRemovePeaks*>(p);
 		while(rmp->running) {
 			rmp->WaitToStart();
-			RemovePeaks(rmp->disp_ptr, rmp->segid_ptr, rmp->w, rmp->h, rmp->threshold);
+			if(rmp->disp_ptr&&rmp->segid_ptr)
+				RemovePeaks(rmp->disp_ptr, rmp->segid_ptr, rmp->w, rmp->h, rmp->threshold);
 			rmp->End();
 		}
 	}
@@ -279,6 +280,16 @@ bool StereoCudaImpl::Init2(sint32 width, sint32 height, sint32 min_disparity, si
 
 void StereoCudaImpl::Release()
 {
+	if (remove_peaks_) {
+		for (sint32 i = 0; i < num_threads_; i++) {
+			if (remove_peaks_[i]) {
+				auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
+				delete rp; remove_peaks_[i] = nullptr;
+			}
+		}
+		delete remove_peaks_;
+		remove_peaks_ = nullptr;
+	}
 	if (computor_) {
 		computor_->Release();
 		delete computor_; computor_ = nullptr;
@@ -291,22 +302,13 @@ void StereoCudaImpl::Release()
 		filter_->Release();
 		delete filter_; filter_ = nullptr;
 	}
-	cudaFree(cu_img_left_);
-	cudaFree(cu_img_right_);
-	cudaFree(cu_depth_left_);
-	cudaFree(cu_inidisp_left_);
-	cudaFree(cu_inidisp_right_);
-	cudaFree(cu_inidisp_tmp_);
-	if (remove_peaks_) {
-		for (sint32 i = 0; i < num_threads_; i++) {
-			if (remove_peaks_[i]) {
-				auto* rp = static_cast<thread_remove_peaks*>(remove_peaks_[i]);
-				delete rp; rp = nullptr;
-			}
-		}
-		delete remove_peaks_;
-		remove_peaks_ = nullptr;
-	}
+	SafeCudaFree(cu_img_left_);
+	SafeCudaFree(cu_img_right_);
+	SafeCudaFree(cu_depth_left_);
+	SafeCudaFree(cu_inidisp_left_);
+	SafeCudaFree(cu_inidisp_right_);
+	SafeCudaFree(cu_inidisp_tmp_);
+	
 	if (inidisp_tmp_) {
 		delete[] inidisp_tmp_;
 		inidisp_tmp_ = nullptr;
@@ -351,8 +353,11 @@ bool StereoCudaImpl::MallocPageLockedPtr(void** ptr, size_t size)
 
 bool StereoCudaImpl::FreePageLockedPtr(void* ptr)
 {
-	const auto err = cudaFreeHost(ptr);
-	return err == cudaSuccess;
+	if (ptr) {
+		const auto err = cudaFreeHost(ptr);
+		ptr = nullptr;
+		return err == cudaSuccess;
+	}
 }
 
 bool StereoCudaImpl::ComputeCost(uint8* img_left, uint8* img_right, sint16* init_disp_left/* = nullptr*/) const
@@ -445,7 +450,7 @@ void StereoCudaImpl::Filter() const
 	auto start = steady_clock::now();
 
 	if (filter_) {
-		filter_->SetData(aggregator_->get_disp_ptr(), aggregator_->get_disp_psize());
+		filter_->SetData(cu_img_left_, aggregator_->get_disp_ptr(),im_psize_, aggregator_->get_disp_psize());
 		filter_->SetParam(sgm_option_.do_median_filter, sgm_option_.post_filter_type, sgm_option_.morphology_type);
 		filter_->Filter();
 	}
@@ -620,4 +625,16 @@ void StereoCudaImpl::GetRoiFromDispMap(float32* disp_ptr, sint32 width, sint32 h
 		}
 		if (search_done) break;
 	}
+}
+
+void StereoCudaImpl::SetMinDisparity(const sint32& min_disparity)
+{
+	min_disparity_ = min_disparity;
+	computor_->SetMinDisparity(min_disparity);
+	aggregator_->SetMinDisparity(min_disparity);
+}
+
+sint32 StereoCudaImpl::GetDispartyRange()
+{
+	return disp_range_;
 }

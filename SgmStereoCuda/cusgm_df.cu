@@ -7,7 +7,8 @@
 #include "cusgm_types.h"
 
 #define THREADS_COMMON	128
-#define FILTER_T_PER_BLOCK 32
+#define FILTER_WINSIZE_X 32
+#define FILTER_WINSIZE_Y 16
 
 namespace cusgm_df {
 	__device__ void swap(float32& a, float32& b) { float32 tmp = a; a = b; b = tmp; }
@@ -123,7 +124,7 @@ namespace cusgm_df {
 		if (sumWeight > 0.0f) d_output[y * pitch_size / sizeof(float32) + x] = sum / sumWeight;
 	}
 
-	__global__ void Kernel_BilateralFilter(float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR, uint32 width, uint32 height, size_t pitch_size)
+	__global__ void Kernel_BilateralFilter(uint8* img_bytes, float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR, uint32 width, uint32 height, size_t im_psize, size_t dp_psize)
 	{
 		const sint32 x = blockIdx.x * blockDim.x + threadIdx.x;
 		const sint32 y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -132,12 +133,13 @@ namespace cusgm_df {
 
 		const sint32 kernelRadius = (sint32)ceil(2.0 * sigmaD);
 
-		d_output[y * pitch_size / sizeof(float32) + x] = INVALID_VALUE;
+		d_output[y * dp_psize / sizeof(float32) + x] = INVALID_VALUE;
 
 		float32 sum = 0.0f;
 		float32 sumWeight = 0.0f;
 
-		const float32 depthCenter = d_input[y * pitch_size / sizeof(float32) + x];
+		const float32 depthCenter = d_input[y * dp_psize / sizeof(float32) + x];
+		const uint8 grayCenter = img_bytes[y * im_psize / sizeof(uint8) + x];
 		if (depthCenter != INVALID_VALUE)
 		{
 			for (sint32 m = x - kernelRadius; m <= x + kernelRadius; m++)
@@ -146,10 +148,11 @@ namespace cusgm_df {
 				{
 					if (m >= 0 && n >= 0 && m < width && n < height)
 					{
-						const float32 currentDepth = d_input[n * pitch_size / sizeof(float32) + m];
-
-						if (currentDepth != INVALID_VALUE && fabs(depthCenter - currentDepth) < sigmaR) {
-							const float32 weight = gaussD(sigmaD, m - x, n - y) * gaussR(sigmaR, currentDepth - depthCenter);
+						const float32 currentDepth = d_input[n * dp_psize / sizeof(float32) + m];
+						const uint8 currentGray = img_bytes[n * im_psize / sizeof(uint8) + m];
+						
+						if (currentDepth != INVALID_VALUE && fabs(float(currentGray - grayCenter)) < sigmaR) {
+							const float32 weight = gaussD(sigmaD, m - x, n - y) * gaussR(sigmaR, currentGray - grayCenter);
 
 							sumWeight += weight;
 							sum += weight * currentDepth;
@@ -158,7 +161,7 @@ namespace cusgm_df {
 				}
 			}
 
-			if (sumWeight > 0.0f) d_output[y * pitch_size / sizeof(float32) + x] = sum / sumWeight;
+			if (sumWeight > 0.0f) d_output[y * dp_psize / sizeof(float32) + x] = sum / sumWeight;
 		}
 	}
 
@@ -169,7 +172,7 @@ namespace cusgm_df {
 		uint32 j = blockIdx.y * blockDim.y + threadIdx.y;
 		sint32 wth = (wndsize - 1) / 2;
 		T in_v, out_v;
-		if (i >= 0 && i < width && j >= 0 && j < height)
+		if (i >= 0u && i < width && j >= 0u && j < height)
 		{
 			in_v = d_input[j * pitch_size / sizeof(T) + i];
 			out_v = in_v;
@@ -249,13 +252,15 @@ bool DisparityFilter::Initialize(const sint32& width, const sint32& height)
 	return is_initialized_;
 }
 
-void DisparityFilter::Release() const
+void DisparityFilter::Release()
 {
-	cudaFree(disp_map_filter_);
+	SafeCudaFree(disp_map_filter_);
 }
 
-void DisparityFilter::SetData(float32* disp_map, const size_t& dp_psize)
+void DisparityFilter::SetData(uint8* img_bytes, float32* disp_map, const size_t& im_psize, const size_t& dp_psize)
 {
+	img_bytes_ = img_bytes;
+	im_psize_ = im_psize;
 	disp_map_ = disp_map;
 	dp_psize_ = dp_psize;
 }
@@ -283,12 +288,12 @@ void DisparityFilter::Filter()
 	// ÂË²¨ºó´¦Àí
 	if (postfilter_type_ == CuSGMOption::PF_Type::PF_GAUSS) {
 		//¸ßË¹ÂË²¨
-		GaussFilterFloatCuda(disp_map_filter_, disp_map_out_, 0.5, 1.0, width_, height_, dp_psize_);
+		GaussFilterFloatCuda(disp_map_filter_, disp_map_out_, 1.5, 2.0, width_, height_, dp_psize_);
 		disp_map_out_ = disp_map_filter_;
 	}
 	else if (postfilter_type_ == CuSGMOption::PF_Type::PF_BILATERAL) {
 		//Ë«±ßÂË²¨
-		BilateralFilterFloatCuda(disp_map_filter_, disp_map_out_, 0.5, 1.0, width_, height_, dp_psize_);
+		BilateralFilterFloatCuda(img_bytes_, disp_map_filter_, disp_map_out_, 2.5, 10.0, width_, height_,im_psize_, dp_psize_);
 		disp_map_out_ = disp_map_filter_;
 	}
 
@@ -352,22 +357,21 @@ void DisparityFilter::Median3X3FilterCuda(float32* d_inout, sint32 width, sint32
 void DisparityFilter::GaussFilterFloatCuda(float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR,
 	uint32 width, uint32 height, size_t dp_psize)
 {
-	const dim3 gridSize((width + FILTER_T_PER_BLOCK - 1) / FILTER_T_PER_BLOCK, (height + FILTER_T_PER_BLOCK - 1) / FILTER_T_PER_BLOCK);
-	const dim3 blockSize(FILTER_T_PER_BLOCK, FILTER_T_PER_BLOCK);
-
+	const dim3 gridSize((width + FILTER_WINSIZE_X - 1) / FILTER_WINSIZE_X, (height + FILTER_WINSIZE_Y - 1) / FILTER_WINSIZE_Y);
+	const dim3 blockSize(FILTER_WINSIZE_X, FILTER_WINSIZE_Y);
+	
 	cusgm_df::Kernel_GaussFilter << <gridSize, blockSize >> > (d_output, d_input, sigmaD, sigmaR, width, height, dp_psize);
 #ifdef SYNCHRONIZE
 	cudaDeviceSynchronize();
 #endif
 }
 
-void DisparityFilter::BilateralFilterFloatCuda(float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR,
-	uint32 width, uint32 height, size_t dp_psize)
+void DisparityFilter::BilateralFilterFloatCuda(uint8* img_bytes, float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR, uint32 width, uint32 height, size_t im_psize, size_t dp_psize)
 {
-	const dim3 gridSize((width + FILTER_T_PER_BLOCK - 1) / FILTER_T_PER_BLOCK, (height + FILTER_T_PER_BLOCK - 1) / FILTER_T_PER_BLOCK);
-	const dim3 blockSize(FILTER_T_PER_BLOCK, FILTER_T_PER_BLOCK);
+	const dim3 gridSize((width + FILTER_WINSIZE_X - 1) / FILTER_WINSIZE_X, (height + FILTER_WINSIZE_Y - 1) / FILTER_WINSIZE_Y);
+	const dim3 blockSize(FILTER_WINSIZE_X, FILTER_WINSIZE_Y);
 
-	cusgm_df::Kernel_BilateralFilter << <gridSize, blockSize >> > (d_output, d_input, sigmaD, sigmaR, width, height, dp_psize);
+	cusgm_df::Kernel_BilateralFilter << <gridSize, blockSize >> > (img_bytes, d_output, d_input, sigmaD, sigmaR, width, height, im_psize, dp_psize);
 #ifdef SYNCHRONIZE
 	cudaDeviceSynchronize();
 #endif

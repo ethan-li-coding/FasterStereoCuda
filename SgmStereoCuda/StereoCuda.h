@@ -1,10 +1,14 @@
 #pragma once
 #include "sgm_types.h"
 
+#ifdef _WIN32
 #ifdef STEREO_CUDA_EXPORT
 #define STEREO_CUDA_DLL __declspec(dllexport)
 #else
 #define STEREO_CUDA_DLL __declspec(dllimport)
+#endif
+#else
+#define STEREO_CUDA_DLL
 #endif
 
 class STEREO_CUDA_DLL StereoCuda
@@ -64,6 +68,9 @@ public:
 	 */
 	bool Match2(uint8* img_left, uint8* img_right, float32* depth_left, sint16* init_disp_left = nullptr, StereoROI_T* ste_roi_left = nullptr, StereoROI_T* ste_roi_right = nullptr) const;
 
+	void	SetMinDisparity(const sint32& min_disparty);
+	sint32	GetDispartyRange();
+	
 	/**\brief ÊÍ·ÅÄÚ´æ */
 	void Release() const;
 

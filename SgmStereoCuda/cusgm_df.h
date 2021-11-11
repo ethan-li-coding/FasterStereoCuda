@@ -22,14 +22,15 @@ public:
 	bool Initialize(const sint32& width, const sint32& height);
 	
 	/** \brief 释放内存 */
-	void Release() const;
+	void Release();
 
 	/**
 	 * \brief 设置数据（设备端数据）
 	 * \param disp_map	视差图
-	 * \param dp_psize	对齐后的pitch大小
+	 * \param im_psize	对齐后的图像pitch大小
+	 * \param dp_psize	对齐后的深度图pitch大小
 	 */
-	void SetData(float32* disp_map, const size_t& dp_psize);
+	void SetData(uint8* img_bytes, float32* disp_map, const size_t& im_psize, const size_t& dp_psize);
 
 	/**
 	 * \brief 设置参数
@@ -51,7 +52,7 @@ public:
 
 	// 后处理滤波方法集
 	static void GaussFilterFloatCuda(float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR, uint32 width, uint32 height, size_t dp_psize);
-	static void BilateralFilterFloatCuda(float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR, uint32 width, uint32 height, size_t dp_psize);
+	static void BilateralFilterFloatCuda(uint8* img_bytes, float32* d_output, float32* d_input, float32 sigmaD, float32 sigmaR, uint32 width, uint32 height, size_t im_psize, size_t dp_psize);
 
 	// 形态学处理方法集
 	static void ErosionCuda(float32* d_output, float32* d_input, sint32 wndsize, sint32 width, sint32 height, size_t dp_psize);
@@ -64,6 +65,10 @@ private:
 	sint32	width_;
 	sint32	height_;
 
+	/** \brief 左图像数据*/
+	uint8*	img_bytes_;
+	/** \brief 对齐的图像pitch大小*/
+	size_t im_psize_;
 	/** \brief 视差图*/
 	float32* disp_map_;
 	/** \brief 对齐的视差图pitch大小*/

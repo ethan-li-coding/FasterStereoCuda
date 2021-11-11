@@ -71,6 +71,9 @@ public:
 	 */
 	static void GetRoiFromDispMap(float32* disp_ptr, sint32 width, sint32 height, StereoROI_T& ste_roi);
 
+	void	SetMinDisparity(const sint32& min_disparity);
+	sint32	GetDispartyRange();
+	
 	/**\brief ÊÍ·ÅÄÚ´æ */
 	void Release();
 

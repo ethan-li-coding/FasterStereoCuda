@@ -3930,7 +3930,7 @@ bool CostAggregator::Initialize(const sint32& width, const sint32& height, const
 	}
 
 	// cost mat
-	cudaExtent extent = make_cudaExtent(32, 32, 32);
+	cudaExtent extent = make_cudaExtent(disp_range, 32, 32);
 	cudaPitchedPtr temp{};
 	if (!CudaSafeCall(cudaMalloc3D(&temp, extent))) {
 		is_initialized_ = false;
@@ -3938,8 +3938,9 @@ bool CostAggregator::Initialize(const sint32& width, const sint32& height, const
 	}
 
 	// malloc aligned 3d array
-	extent = make_cudaExtent(temp.pitch, size_t(width_) / (cu_max(1, temp.pitch / disp_range)), height_);
-	cudaFree(temp.ptr);
+	const auto pixel_in_pitch = cu_max(1, temp.pitch / disp_range);
+	extent = make_cudaExtent(temp.pitch, (width_ + pixel_in_pitch - 1) / pixel_in_pitch, height_);
+	SafeCudaFree(temp.ptr);
 
 	/*if (!CudaSafeCall(cudaMalloc3D(&cost_aggr_, extent))) {
 		return false;
@@ -4066,7 +4067,7 @@ void CostAggregator::Aggregate(sint16* init_disp_mat, const size_t& idp_psize, c
 				cusgm_ca::Kernel_Aggregate_Horizontal_Warp<1> << <block2_CA, threads_CA, threads_CA.x * threads_CA.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
 					min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_, init_disp_mat, idp_psize);
 			}
-			for (sint32 i = 0; i < 4; i++)
+			for (sint32 i = 0; i < PATH_NUM; i++)
 				cudaStreamSynchronize(streams[i]);
 			//将各个方向代价相加到最终的代价数组中,然后统计最小代价
 			const sint32 n_lines = 4;
@@ -4131,7 +4132,7 @@ void CostAggregator::Aggregate(sint16* init_disp_mat, const size_t& idp_psize, c
 			cusgm_ca::Kernel_Aggregate_Right2Left << <block2_CA, threads_CA, 4 * threads_CA.x * threads_CA.y * sizeof(uint32), streams[3] >> > (cost_init, cost_aggr_dir_[3], width_, height_,
 				min_disparity_, disp_range, roi_x, roi_y, roi_x + roi_w, ca_p1_, ca_p2_);
 		}
-		for (sint32 i = 0; i < 4; i++)
+		for (sint32 i = 0; i < PATH_NUM; i++)
 			cudaStreamSynchronize(streams[i]);
 
 		//将各个方向代价相加到最终的代价数组中,然后统计最小代价
@@ -4349,10 +4350,17 @@ void CostAggregator::LRCheck(CostComputor* cost_computor, float32 lr_check_thres
 #endif
 }
 
+void CostAggregator::SetMinDisparity(const sint32& min_disparity)
+{
+	const auto range = max_disparity_ - min_disparity_;
+	min_disparity_ = min_disparity;
+	max_disparity_ = min_disparity + range;
+}
+
 void CostAggregator::Release()
 {
-	cudaFree(disp_map_);
-	cudaFree(disp_map_r_);
+	SafeCudaFree(disp_map_);
+	SafeCudaFree(disp_map_r_);
 	safeFree3D(&cost_aggr_);
 	for (int k = 0; k < PATH_NUM; k++) {
 		safeFree3D(&cost_aggr_dir_[k]);

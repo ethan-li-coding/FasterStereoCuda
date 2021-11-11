@@ -1,9 +1,3 @@
-/* -*-c++-*- AD-Census - Copyright (C) 2020.
-* Author	: Yingsong Li(Ethan Li) <ethan.li.whu@gmail.com>
-* Github	: https://github.com/ethan-li-coding
-* Describe	: header of class CrossAggregator
-*/
-
 #ifndef SGM_CUDA_COST_AGGREGATE_H_
 #define SGM_CUDA_COST_AGGREGATE_H_
 
@@ -52,7 +46,8 @@ public:
 	/**\brief lr-check */
 	void LRCheck(CostComputor* cost_computor, float32 lr_check_thres, sint16* init_disp_mat = nullptr, const size_t& idp_psize = 0, const StereoROI_T* ste_roi = nullptr);
 
-
+	void SetMinDisparity(const sint32& min_disparity);
+	
 	/** \brief 获取设备端聚合代价指针 */
 	cudaPitchedPtr* get_cost_ptr();
 
@@ -91,9 +86,9 @@ private:
 	/** \brief max disparity */
 	sint32 max_disparity_;
 	/** \brief p1 */
-	float32 ca_p1_;
+	sint32 ca_p1_;
 	/** \brief initial p2 */
-	float32 ca_p2_;
+	sint32 ca_p2_;
 	/** \brief whether p2 is constant or not */
 	bool	constant_p2_;
 	/** \brief uniqueness constraint threshold */

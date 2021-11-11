@@ -22,7 +22,7 @@
     <ProjectGuid>{848AEDE6-0FF9-4B83-8D14-5B3AD19EB21A}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>FasterStereo</RootNamespace>
-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
     <ProjectName>FasterStereoCuda</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />

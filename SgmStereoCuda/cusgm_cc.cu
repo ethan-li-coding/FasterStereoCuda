@@ -201,7 +201,7 @@ __global__ void Kernel_CostCompute(uint64* census_left, uint64* census_right, cu
 			if (image_pos_r > 0 && image_pos_r < width)
 				cost[threadIdx.x] = Hamming(sr_census_ll[data_offset + i], censusr[image_pos_r]) + CostAdjust(threadIdx.x);
 			else
-				cost[threadIdx.x] = 0xffff;
+				cost[threadIdx.x] = 0xff;
 			cost += costptrstep;
 		}
 	}
@@ -407,19 +407,20 @@ bool CostComputor::Initialize(const sint32& width, const sint32& height, const s
 
 	// initial cost mat
 	cost_ = new cudaPitchedPtr;
-	cudaExtent extent = make_cudaExtent(32, 32, 32);
+	cudaExtent extent = make_cudaExtent(disp_range, 32, 32);
 	cudaPitchedPtr temp{};
 	if (!CudaSafeCall(cudaMalloc3D(&temp, extent))) {
 		is_initialized_ = false;
 		return false;
 	}
 	// malloc aligned 3d array
-	extent = make_cudaExtent(temp.pitch, size_t(width_) / (cu_max(1, temp.pitch / disp_range)), height_);
+	const auto pixel_in_pitch = cu_max(1, temp.pitch / disp_range);
+	extent = make_cudaExtent(temp.pitch, (width_ + pixel_in_pitch - 1) / pixel_in_pitch, height_);
 	if (!CudaSafeCall(cudaMalloc3D(cost_, extent))) {
 		is_initialized_ = false;
 		return false;
 	}
-	cudaFree(temp.ptr);
+	SafeCudaFree(temp.ptr);
 
 	is_initialized_ = true;
 	return is_initialized_;
@@ -521,9 +522,16 @@ void CostComputor::ComputeCost(sint16* init_disp_mat, const size_t& idp_psize, c
 #endif
 }
 
-void CostComputor::Release() const
+void CostComputor::SetMinDisparity(const sint32& min_disparity)
 {
-	cudaFree(census_left_);
-	cudaFree(census_right_);
+	const auto range = max_disparity_ - min_disparity_;
+	min_disparity_ = min_disparity;
+	max_disparity_ = min_disparity + range;
+}
+
+void CostComputor::Release()
+{
+	SafeCudaFree(census_left_);
+	SafeCudaFree(census_right_);
 	safeFree3D(static_cast<cudaPitchedPtr*>(cost_));
 }
