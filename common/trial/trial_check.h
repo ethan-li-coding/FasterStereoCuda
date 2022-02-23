@@ -16,7 +16,7 @@ public:
 	/**
 	 * \brief ¼ì²éÆ÷
 	 */
-	static inline int Check(const int& trial_period = 60) {
+	static inline int Check(const int& trial_period = 180) {
 		const std::string trial_name = "fasterstereocuda.a";
 
 		typedef std::chrono::duration<int, std::ratio<60 * 60 * 24>> days_type;
