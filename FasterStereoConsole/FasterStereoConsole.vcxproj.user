@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>$(SolutionDir)Data\KITTI\image_2 $(SolutionDir)Data\KITTI\image_3  png $(SolutionDir)Data\KITTI\option.xml</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>$(SolutionDir)Data\Zed2i\left_Test $(SolutionDir)Data\Zed2i\right_Test  png $(SolutionDir)Data\Zed2i\EuRoC2.xml</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
     <RemoteDebuggerCommandArguments>E:\ZG-Prog\GScan\Data\Ep-Data2</RemoteDebuggerCommandArguments>
     <RemoteDebuggerCommand>$(TargetPath)</RemoteDebuggerCommand>

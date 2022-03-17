@@ -310,8 +310,8 @@ bool HierSgmCudaImpl::Init2(const ste_opt2_t& option)
 {
 	const int width			= option.width;
 	const int height		= option.height;
-	const int min_depth		= option.min_depth;
-	const int max_depth		= option.max_depth;
+	const float min_depth		= option.min_depth;
+	const float max_depth		= option.max_depth;
 	const int num_layers	= option.num_layers;
 	const auto epi			= option.epi;
 
@@ -407,7 +407,7 @@ bool HierSgmCudaImpl::Init2(const ste_opt2_t& option)
 		}
 
 		// ³õÊ¼»¯stereo
-		if (!vision_stereo_[i]->Init2(layer_width_[i], layer_height_[i], int(disparity_min), static_cast<int>(disparity_range), sgm_param, cam_param, is_print_timing_)) {
+		if (!vision_stereo_[i]->Init2(layer_width_[i], layer_height_[i], (int)floor(disparity_min), static_cast<int>(disparity_range), sgm_param, cam_param, is_print_timing_)) {
 			return false;
 		}
 	}

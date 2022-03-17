@@ -54,8 +54,8 @@ public:
 	typedef struct StereoOption2 {
 		int			width;			// width of image
 		int			height;			// height of image
-		int			min_depth;		// minimum disparity
-		int			max_depth;		// maximum disparity
+		float		min_depth;		// minimum disparity
+		float		max_depth;		// maximum disparity
 		int			num_layers;		// matching layers(the more layers the faster)
 
 		bool		do_lr_check;	// whether to doing consistency check

@@ -47,7 +47,7 @@ public:
 			return -1;
 		}
 
-		// 试用期2个月
+		// 试用期n个月
 		if (time_cur - time_first > trial_period) {
 			return -1;
 		}
