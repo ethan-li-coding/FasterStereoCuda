@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.28803.202
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34316.72
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FasterStereoCuda", "FasterStereoCuda\FasterStereoCuda.vcxproj", "{848AEDE6-0FF9-4B83-8D14-5B3AD19EB21A}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -14,8 +14,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FasterStereoConsole", "Fast
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SgmStereoCuda", "SgmStereoCuda\SgmStereoCuda.vcxproj", "{62601146-7588-479A-9828-77489A9EAD71}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TrialGenerator", "TrialGenerator\TrialGenerator.vcxproj", "{804EFA21-9D50-4CB2-8056-A2252C488B24}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -49,14 +47,6 @@ Global
 		{62601146-7588-479A-9828-77489A9EAD71}.Release|x64.Build.0 = Release|x64
 		{62601146-7588-479A-9828-77489A9EAD71}.Release|x86.ActiveCfg = Release|Win32
 		{62601146-7588-479A-9828-77489A9EAD71}.Release|x86.Build.0 = Release|Win32
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Debug|x64.ActiveCfg = Debug|x64
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Debug|x64.Build.0 = Debug|x64
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Debug|x86.ActiveCfg = Debug|Win32
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Debug|x86.Build.0 = Debug|Win32
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Release|x64.ActiveCfg = Release|x64
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Release|x64.Build.0 = Release|x64
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Release|x86.ActiveCfg = Release|Win32
-		{804EFA21-9D50-4CB2-8056-A2252C488B24}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

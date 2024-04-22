@@ -93,8 +93,6 @@ private:
 	StereoCuda** vision_stereo_;		// 立体匹配器
 
 	bool is_print_timing_;				// 是否输出耗时日志
-
-	bool in_trial;						// 试用期内标志
 };
 
 
@@ -104,18 +102,8 @@ HierSgmCudaImpl::HierSgmCudaImpl(): bytes_left_(nullptr), bytes_right_(nullptr),
                                     layer_width_(nullptr), layer_height_(nullptr),
                                     layer_disps_left_(nullptr), layer_disps_right_(nullptr),
                                     depth_data_(nullptr),
-                                    vision_stereo_(nullptr), is_print_timing_(false), in_trial(false)
+                                    vision_stereo_(nullptr), is_print_timing_(false)
 {
-	// 判断是否在试用期内
-	int trial = TrialCheck::Check(365);
-	if(trial !=-1) {
-		in_trial = true;
-		printf("试用期还剩 %d 天!\n", trial);
-	}
-	else {
-		in_trial = false;
-		printf("超过试用期!\n");
-	}
 }
 
 HierSgmCudaImpl::~HierSgmCudaImpl()
@@ -419,10 +407,6 @@ bool HierSgmCudaImpl::Init2(const ste_opt2_t& option)
 
 bool HierSgmCudaImpl::Match(const unsigned char * bytes_left, const unsigned char * bytes_right, float * disparity_data)
 {
-	if (!in_trial) {
-		printf("Out of trial period!\n");
-		return false;
-	}
 	if (width_ <= 0 || height_ <= 0){
 		if (is_print_timing_)
 			printf("image size error!\n");
@@ -546,11 +530,6 @@ bool HierSgmCudaImpl::Match(const unsigned char * bytes_left, const unsigned cha
 
 bool HierSgmCudaImpl::Match2(const unsigned char* bytes_left, const unsigned char* bytes_right, float* depth_data)
 {
-	if (!in_trial) {
-		printf("Out of trial period!\n");
-		return false;
-	}
-
 	if (width_ <= 0 || height_ <= 0) {
 		if (is_print_timing_)
 			printf("image size error!\n");
