@@ -107,7 +107,7 @@ HierSgmCudaImpl::HierSgmCudaImpl(): bytes_left_(nullptr), bytes_right_(nullptr),
                                     vision_stereo_(nullptr), is_print_timing_(false), in_trial(false)
 {
 	// 判断是否在试用期内
-	int trial = TrialCheck::Check(180);
+	int trial = TrialCheck::Check(365);
 	if(trial !=-1) {
 		in_trial = true;
 		printf("试用期还剩 %d 天!\n", trial);
