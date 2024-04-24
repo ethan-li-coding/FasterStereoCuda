@@ -15,7 +15,7 @@
 Windows 10<br>
 Visual Studio 2019<br>
 CUDA v11.8 (如果是其他版本的cuda，你可以用文本编辑器手动打开SgmStereoCuda.vcxproj，搜索cuda字符，修改cuda后面的版本号)<br>
-Opencv3.2(下载地址：[https://download.csdn.net/download/rs_lys/13193887](https://download.csdn.net/download/rs_lys/13193887))
+Opencv3.2 (下载地址：[https://download.csdn.net/download/rs_lys/13193887](https://download.csdn.net/download/rs_lys/13193887)，下载后把opencv文件夹放到3rdparty文件夹下)
 
 # 控制台调用方式
 >**单像对：**<br>
